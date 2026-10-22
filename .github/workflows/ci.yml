@@ -76,8 +76,11 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: macos-13  # Use M1 once available https://github.com/github/roadmap/issues/528
 
-    # No need to run on the read-only mirror, unless it is a PR.
-    if: github.repository != 'bitcoin-core/gui' || github.event_name == 'pull_request'
+    # Disabled: GitHub no longer hosts the macos-13 image, so this job sits in
+    # "queued" forever, which keeps every CI run open and blocks re-running any
+    # other job in it. Re-enable after porting to a current image (macos-15 or
+    # macos-26, Xcode 16+) and dropping the hard-coded Xcode_15.0 path below.
+    if: false
 
     timeout-minutes: 120
 
