@@ -17,7 +17,9 @@ BOOST_AUTO_TEST_CASE(MoneyRangeTest)
     BOOST_CHECK_EQUAL(MoneyRange(CAmount(0)), true);
     BOOST_CHECK_EQUAL(MoneyRange(CAmount(1)), true);
     BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY), true);
-    BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY + CAmount(1)), false);
+    // MAX_MONEY is the largest CAmount in this project, so there is no value
+    // above it to test: MAX_MONEY + 1 would overflow (MSVC C4307).
+    static_assert(MAX_MONEY == std::numeric_limits<CAmount>::max());
 }
 
 BOOST_AUTO_TEST_CASE(GetFeeTest)
