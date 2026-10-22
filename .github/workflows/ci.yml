@@ -31,35 +31,36 @@ jobs:
     env:
       MAX_COUNT: 6
     steps:
-      - name: Determine fetch depth
-        run: echo "FETCH_DEPTH=$((${{ github.event.pull_request.commits }} + 2))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: ${{ env.FETCH_DEPTH }}
+          # Fetch the full history so that the merge base with the pull
+          # request's base branch can be found below. Bitcoin Core fetches
+          # only (commits + 2) ancestors and looks for the most recent merge
+          # commit, which assumes every commit on the base branch is a merge
+          # commit. This repository's main branch is linear, so that lookup
+          # found nothing and failed with "fatal: bad revision '^^@'".
+          fetch-depth: 0
       - name: Determine commit range
         run: |
           # Checkout HEAD~ and find the test base commit
           # Checkout HEAD~ because it would be wasteful to rerun tests on the PR
           # head commit that are already run by other jobs.
           git checkout HEAD~
-          # Figure out test base commit by listing ancestors of HEAD, excluding
-          # ancestors of the most recent merge commit, limiting the list to the
-          # newest MAX_COUNT ancestors, ordering it from oldest to newest, and
-          # taking the first one.
+          # Figure out the test base commit from the merge base of HEAD and the
+          # base commit GitHub reports for the pull request. List the commits
+          # after the merge base up to HEAD, limited to the newest MAX_COUNT
+          # commits, ordered from oldest to newest, and take the parent of the
+          # first one so that `git rebase` below replays exactly those commits.
           #
-          # If the branch contains up to MAX_COUNT ancestor commits after the
-          # most recent merge commit, all of those commits will be tested. If it
-          # contains more, only the most recent MAX_COUNT commits will be
-          # tested.
-          #
-          # In the command below, the ^@ suffix is used to refer to all parents
-          # of the merge commit as described in:
-          # https://git-scm.com/docs/git-rev-parse#_other_rev_parent_shorthand_notations
-          # and the ^ prefix is used to exclude these parents and all their
-          # ancestors from the rev-list output as described in:
-          # https://git-scm.com/docs/git-rev-list
-          echo "TEST_BASE=$(git rev-list -n$((${{ env.MAX_COUNT }} + 1)) --reverse HEAD ^$(git rev-list -n1 --merges HEAD)^@ | head -1)" >> "$GITHUB_ENV"
+          # If the branch contains up to MAX_COUNT commits after the merge
+          # base, all of those commits will be tested. If it contains more,
+          # only the most recent MAX_COUNT commits will be tested.
+          MERGE_BASE=$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")
+          FIRST_COMMIT=$(git rev-list -n"${MAX_COUNT}" --reverse "${MERGE_BASE}..HEAD" | head -1)
+          echo "Merge base: ${MERGE_BASE}"
+          echo "First commit to test: ${FIRST_COMMIT}"
+          echo "TEST_BASE=$(git rev-parse "${FIRST_COMMIT}~")" >> "$GITHUB_ENV"
       - run: |
           sudo apt-get update
           sudo apt-get install clang ccache build-essential libtool autotools-dev automake pkg-config bsdmainutils python3-zmq libevent-dev libboost-dev libsqlite3-dev libdb++-dev systemtap-sdt-dev libminiupnpc-dev libnatpmp-dev qtbase5-dev qttools5-dev qttools5-dev-tools qtwayland5 libqrencode-dev -y
