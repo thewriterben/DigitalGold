@@ -27,6 +27,13 @@ libs = [
 ignore_list = [
 ]
 
+# Autotools targets whose names differ from the MSVC project names.
+# The benchmark binary is bench_digitalgold in src/Makefile.bench.include,
+# while the MSVC project keeps its upstream bench_bitcoin name.
+makefile_targets = {
+    'bench_bitcoin': 'bench_digitalgold',
+}
+
 lib_sources = {}
 
 
@@ -44,7 +51,7 @@ def parse_makefile(makefile):
                     current_lib = ''
                 continue
             for lib in libs:
-                _lib = lib.replace('-', '_')
+                _lib = makefile_targets.get(lib, lib).replace('-', '_')
                 if re.search(_lib + '.*_SOURCES \\= \\\\', line):
                     current_lib = lib
                     lib_sources[current_lib] = []
