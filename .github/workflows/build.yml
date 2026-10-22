@@ -11,6 +11,7 @@ on:
       - 'doc/**'
       - 'contrib/**'
       - '**/*.md'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,6 +20,8 @@ jobs:
     env:
       MAKEJOBS: 4
       SDK_URL: https://bitcoincore.org/depends-sources/sdks
+      DGD_VERSION: 26.2.0
+      DEBIAN_FRONTEND: noninteractive
 
     strategy:
       fail-fast: false
@@ -33,22 +36,22 @@ jobs:
         include:
           - name: linux-32-bit
             host: i686-pc-linux-gnu
-            os: ubuntu-20.04
+            os: ubuntu-22.04
             packages: g++-multilib
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-glibc-back-compat --enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
             goal: install
 
           - name: linux-64-bit
             host: x86_64-pc-linux-gnu
-            os: ubuntu-20.04
+            os: ubuntu-22.04
             packages: python3
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-glibc-back-compat --enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
             goal: install
 
           - name: windows-64-bit
@@ -63,7 +66,7 @@ jobs:
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libgcc"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libgcc"
             goal: install
 
           - name: macos-64-bit
@@ -73,29 +76,31 @@ jobs:
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no"
             goal: deploy
             sdk: 12.2-12B45b
 
           - name: linux-arm-32-bit
             host: arm-linux-gnueabihf
-            os: ubuntu-20.04
-            packages: g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+            os: ubuntu-22.04
+            packages: g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf zip
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-glibc-back-compat --enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
             goal: install
+            package-arch: armhf
 
           - name: linux-arm-64-bit
             host: aarch64-linux-gnu
-            os: ubuntu-20.04
-            packages: g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+            os: ubuntu-22.04
+            packages: g++-aarch64-linux-gnu binutils-aarch64-linux-gnu zip
             check-security: false
             check-symbols: false
             dep-opts: ""
-            config-opts: "--enable-glibc-back-compat --enable-reduce-exports --enable-upnp-default --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
+            config-opts: "--enable-reduce-exports --disable-tests --disable-bench --disable-man --enable-fuzz=no --enable-fuzz-binary=no LDFLAGS=-static-libstdc++"
             goal: install
+            package-arch: arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -107,12 +112,12 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update -qq
           sudo apt-get remove -qq libmono* moby* mono* nginx* php* libgdiplus libpcre2-posix3 libzip4
- 
+
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install make automake cmake curl g++-multilib libtool binutils-gold bsdmainutils pkg-config python3 patch bison
-          sudo apt-get install ${{ matrix.packages }}
+          sudo apt-get install -y make automake cmake curl g++-multilib libtool binutils-gold bsdmainutils pkg-config python3 patch bison
+          sudo apt-get install -y ${{ matrix.packages }}
 
       - name: Post Install
         if: ${{ matrix.postinstall }}
@@ -148,13 +153,21 @@ jobs:
 
       - name: Build depends
         run: |
-          make -j $MAKEJOBS -C depends HOST=${{ matrix.host }} ${{ matrix.dep-opts }}
+          # Qt 5.15.x tarballs moved off download.qt.io/official_releases (the path in
+          # depends/packages/qt.mk) to the archive tree, and the bitcoincore.org
+          # fallback mirror does not carry them, so point depends at the archive.
+          QT_VERSION=$(sed -n 's/^\$(package)_version=//p' depends/packages/qt.mk)
+          echo "Qt version from depends/packages/qt.mk: ${QT_VERSION}"
+          make -j $MAKEJOBS -C depends HOST=${{ matrix.host }} \
+            qt_download_path=https://download.qt.io/archive/qt/5.15/${QT_VERSION}/submodules \
+            ${{ matrix.dep-opts }}
+
       - name: Build DigitalGold
         run: |
           ./autogen.sh
           ./configure --prefix=`pwd`/depends/${{ matrix.host }} ${{ matrix.config-opts }} --enable-reduce-exports || ( cat config.log && false)
           make -j $MAKEJOBS ${{ matrix.goal }} || ( echo "Build failure. Verbose build follows." && make ${{ matrix.goal }} V=1 ; false )
- 
+
       - name: Check security
         if: ${{ matrix.check-security }}
         run: make -C src check-security
@@ -163,7 +176,36 @@ jobs:
         if: ${{ matrix.check-symbols }}
         run: make -C src check-symbols
 
+      - name: Package ARM binaries
+        if: ${{ matrix.package-arch }}
+        run: |
+          set -euo pipefail
+          STAGE="digitalgold.${DGD_VERSION}"
+          ZIP="digitalgold-${DGD_VERSION}-linux-${{ matrix.package-arch }}.zip"
+          rm -rf "${STAGE}" "${ZIP}" "${ZIP}.sha256"
+          mkdir -p "${STAGE}"
+          for bin in depends/${{ matrix.host }}/bin/digitalgold*; do
+            ${{ matrix.host }}-strip "${bin}"
+            cp "${bin}" "${STAGE}/"
+          done
+          ls -l "${STAGE}"
+          zip -r "${ZIP}" "${STAGE}"
+          sha256sum "${ZIP}" > "${ZIP}.sha256"
+          cat "${ZIP}.sha256"
+
+      - name: Upload ARM artifacts
+        if: ${{ matrix.package-arch }}
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: digitalgold-${{ env.DGD_VERSION }}-linux-${{ matrix.package-arch }}
+          path: |
+            digitalgold-${{ env.DGD_VERSION }}-linux-${{ matrix.package-arch }}.zip
+            digitalgold-${{ env.DGD_VERSION }}-linux-${{ matrix.package-arch }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload artifacts
+        if: ${{ !matrix.package-arch }}
         uses: actions/upload-artifact@v4.4.3
         with:
           name: digitalgold-26.2-${{ github.sha }}-${{ matrix.name }}
@@ -172,8 +214,3 @@ jobs:
             dist/DigitalGold-Qt.app
           if-no-files-found: error
           retention-days: 14
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4.1.8
-        with:
-          name: digitalgold-26.2-${{ github.sha }}-${{ matrix.name }}
