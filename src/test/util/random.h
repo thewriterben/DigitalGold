@@ -69,7 +69,9 @@ static inline bool InsecureRandBool()
 
 static inline CAmount InsecureRandMoneyAmount()
 {
-    return static_cast<CAmount>(InsecureRandRange(MAX_MONEY + 1));
+    // Widen before adding: MAX_MONEY + 1 overflows CAmount in this project
+    // (MSVC reports C4307 and the build treats warnings as errors).
+    return static_cast<CAmount>(InsecureRandRange(static_cast<uint64_t>(MAX_MONEY) + 1));
 }
 
 #endif // BITCOIN_TEST_UTIL_RANDOM_H

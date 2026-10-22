@@ -146,6 +146,7 @@
     <QT_MOC Include="..\..\src\qt\intro.cpp" />
     <QT_MOC Include="..\..\src\qt\overviewpage.cpp" />
     <QT_MOC Include="..\..\src\qt\rpcconsole.cpp" />
+    <QT_MOC Include="..\..\src\qt\walletmodel.cpp" />
     <MocHeaderFiles Include="..\..\src\qt\*.h" />
     <ResourceTemplates Include="..\..\src\qt\*.qrc" />
     <UiFormFiles Include="..\..\src\qt\forms\*.ui" />

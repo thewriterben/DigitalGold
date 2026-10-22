@@ -27,9 +27,8 @@ using node::NodeContext;
 
 void RegisterFeeRPCCommands(CRPCTable& t)
 {
-    static const CRPCCommand commands[]{
-    };
-    for (const auto& c : commands) {
-        t.appendCommand(c.name, &c);
-    }
+    // DigitalGold has no fee estimation RPCs, so there is nothing to register.
+    // An empty CRPCCommand array is kept out on purpose: MSVC rejects
+    // zero-length arrays (C2466), while GCC and Clang accept them.
+    (void)t;
 }

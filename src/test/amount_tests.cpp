@@ -17,7 +17,9 @@ BOOST_AUTO_TEST_CASE(MoneyRangeTest)
     BOOST_CHECK_EQUAL(MoneyRange(CAmount(0)), true);
     BOOST_CHECK_EQUAL(MoneyRange(CAmount(1)), true);
     BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY), true);
-    BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY + CAmount(1)), false);
+    // MAX_MONEY is the largest CAmount in this project, so there is no value
+    // above it to test: MAX_MONEY + 1 would overflow (MSVC C4307).
+    static_assert(MAX_MONEY == std::numeric_limits<CAmount>::max());
 }
 
 BOOST_AUTO_TEST_CASE(GetFeeTest)
@@ -99,7 +101,7 @@ BOOST_AUTO_TEST_CASE(BinaryOperatorTest)
     BOOST_CHECK(a <= a);
     BOOST_CHECK(b >= a);
     BOOST_CHECK(b >= b);
-    // a should be 0.00000002 BTC/kvB now
+    // a should be 0.00000002 DGD/kvB now
     a += a;
     BOOST_CHECK(a == b);
 }
@@ -108,9 +110,9 @@ BOOST_AUTO_TEST_CASE(ToStringTest)
 {
     CFeeRate feeRate;
     feeRate = CFeeRate(1);
-    BOOST_CHECK_EQUAL(feeRate.ToString(), "0.00000001 BTC/kvB");
-    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::BTC_KVB), "0.00000001 BTC/kvB");
-    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::SAT_VB), "0.001 sat/vB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(), "0.00000001 DGD/kvB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::BTC_KVB), "0.00000001 DGD/kvB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::SAT_VB), "0.001 atom/vB");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -3,6 +3,7 @@
   "version-string": "1",
   "dependencies": [
     "berkeleydb",
+    "boost-date-time",
     "boost-multi-index",
     "boost-process",
     "boost-signals2",
@@ -14,7 +15,7 @@
     },
     "zeromq"
   ],
-  "builtin-baseline": "f14984af3738e69f197bf0e647a8dca12de92996",
+  "builtin-baseline": "6f29f12e82a8293156836ad81cc9bf5af41fe836",
   "overrides": [
     {
       "name": "libevent",
