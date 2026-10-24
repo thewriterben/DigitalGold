@@ -40,7 +40,7 @@ class TxnMallTest(BitcoinTestFramework):
 
     def run_test(self):
         # All nodes should start with 1,250 BTC:
-        starting_balance = 1250
+        starting_balance = 50000  # DigitalGold: 50 block rewards of 1000 DGD from the cached chain
 
         # All nodes should be out of IBD.
         # If the nodes are not all out of IBD, that can interfere with
@@ -100,8 +100,7 @@ class TxnMallTest(BitcoinTestFramework):
         # Node0's balance should be starting balance, plus 50BTC for another
         # matured block, minus 40, minus 20, and minus transaction fees:
         expected = starting_balance + fund_foo_tx["fee"] + fund_bar_tx["fee"]
-        if self.options.mine_block:
-            expected += 50
+        # (all of node0's cached block rewards are already mature, so mining adds nothing)
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -138,11 +137,11 @@ class TxnMallTest(BitcoinTestFramework):
         # Node0's total balance should be starting balance, plus 100BTC for
         # two more matured blocks, minus 1240 for the double-spend, plus fees (which are
         # negative):
-        expected = starting_balance + 100 - 1240 + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
+        expected = starting_balance - 1240 + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
         assert_equal(self.nodes[0].getbalance(), expected)
 
         # Node1's balance should be its initial balance (1250 for 25 block rewards) plus the doublespend:
-        assert_equal(self.nodes[1].getbalance(), 1250 + 1240)
+        assert_equal(self.nodes[1].getbalance(), starting_balance + 1240)
 
 
 if __name__ == '__main__':

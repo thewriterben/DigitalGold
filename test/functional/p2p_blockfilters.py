@@ -65,8 +65,10 @@ class CompactFiltersTest(BitcoinTestFramework):
         self.nodes[0].syncwithvalidationinterfacequeue()
         assert_equal(self.nodes[0].getblockcount(), 1000)
 
-        self.generate(self.nodes[1], 1001, sync_fun=self.no_op)
-        assert_equal(self.nodes[1].getblockcount(), 2000)
+        # (DigitalGold only serves stale blocks less than 10 hours of proof-equivalent time behind
+        # the best header, so node 1's chain stays within a few hundred 64-second blocks)
+        self.generate(self.nodes[1], 300, sync_fun=self.no_op)
+        assert_equal(self.nodes[1].getblockcount(), 1299)
 
         # Check that nodes have signalled NODE_COMPACT_FILTERS correctly.
         assert peer_0.nServices & NODE_COMPACT_FILTERS != 0
@@ -108,9 +110,10 @@ class CompactFiltersTest(BitcoinTestFramework):
 
         main_cfcheckpt = self.nodes[0].getblockfilter(main_block_hash, 'basic')['header']
         tip_cfcheckpt = self.nodes[0].getblockfilter(tip_hash, 'basic')['header']
+        assert_equal(tip_cfcheckpt, self.nodes[0].getblockfilter(tip_hash, 'basic')['header'])
         assert_equal(
             response.headers,
-            [int(header, 16) for header in (main_cfcheckpt, tip_cfcheckpt)],
+            [int(header, 16) for header in (main_cfcheckpt, )],  # the tip (height 1299) is not a checkpoint
         )
 
         self.log.info("Check that peers can fetch cfcheckpt on stale chain.")
@@ -214,6 +217,10 @@ class CompactFiltersTest(BitcoinTestFramework):
             with self.nodes[1].assert_debug_log(expected_msgs=["requested unsupported block filter type"]):
                 peer_1.send_message(request)
                 peer_1.wait_for_disconnect()
+
+        # extend the chain beyond 2000 blocks so that the cfheaders request below exceeds the limit
+        self.generate(self.nodes[0], 1000)
+        tip_hash = self.nodes[0].getbestblockhash()
 
         self.log.info("Check that invalid requests result in disconnection.")
         requests = [

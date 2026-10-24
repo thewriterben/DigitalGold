@@ -91,8 +91,9 @@ class NetTest(BitcoinTestFramework):
         # the address bound to on one side will be the source address for the other node
         assert_equal(peer_info[0][0]['addrbind'], peer_info[1][0]['addr'])
         assert_equal(peer_info[1][0]['addrbind'], peer_info[0][0]['addr'])
-        assert_equal(peer_info[0][0]['minfeefilter'], Decimal("0.00000500"))
-        assert_equal(peer_info[1][0]['minfeefilter'], Decimal("0.00001000"))
+        # DigitalGold always announces its fixed 0.0001 DGD/kB minimum fee rate
+        assert_equal(peer_info[0][0]['minfeefilter'], Decimal("0.00010000"))
+        assert_equal(peer_info[1][0]['minfeefilter'], Decimal("0.00010000"))
         # check the `servicesnames` field
         for info in peer_info:
             assert_net_servicesnames(int(info[0]["services"], 0x10), info[0]["servicesnames"])
@@ -243,7 +244,7 @@ class NetTest(BitcoinTestFramework):
 
         # Add an IPv6 address to the address manager.
         ipv6_addr = "1233:3432:2434:2343:3234:2345:6546:4534"
-        self.nodes[0].addpeeraddress(address=ipv6_addr, port=7737)
+        self.nodes[0].addpeeraddress(address=ipv6_addr, port=7733)
 
         # Add 10,000 IPv4 addresses to the address manager. Due to the way bucket
         # and bucket positions are calculated, some of these addresses will collide.

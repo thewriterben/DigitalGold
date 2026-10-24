@@ -5,6 +5,7 @@
 """Test BIP68 implementation."""
 
 import time
+from decimal import Decimal
 
 from test_framework.blocktools import (
     NORMAL_GBT_REQUEST_PARAMS,
@@ -60,7 +61,7 @@ class BIP68Test(BitcoinTestFramework):
         ]
 
     def run_test(self):
-        self.relayfee = self.nodes[0].getnetworkinfo()["relayfee"]
+        self.relayfee = Decimal("0.0001")  # DigitalGold: the consensus minimum fee rate, above the relay fee
         self.wallet = MiniWallet(self.nodes[0])
 
         self.log.info("Running test disable flag")
@@ -266,8 +267,10 @@ class BIP68Test(BitcoinTestFramework):
         test_nonzero_locks(tx2, self.nodes[0], self.relayfee, use_height_lock=False)
 
         # Now mine some blocks, but make sure tx2 doesn't get mined.
-        # Use prioritisetransaction to lower the effective feerate to 0
-        self.nodes[0].prioritisetransaction(txid=tx2.hash, fee_delta=int(-self.relayfee*COIN))
+        # DigitalGold has no prioritisetransaction, so raise -blockmintxfee above tx2's fee rate instead
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-blockmintxfee=0.001"])
+        self.connect_nodes(0, 1)
+        assert tx2.hash in self.nodes[0].getrawmempool()
         cur_time = int(time.time())
         for _ in range(10):
             self.nodes[0].setmocktime(cur_time + 600)
@@ -280,7 +283,9 @@ class BIP68Test(BitcoinTestFramework):
         test_nonzero_locks(tx2, self.nodes[0], self.relayfee, use_height_lock=False)
 
         # Mine tx2, and then try again
-        self.nodes[0].prioritisetransaction(txid=tx2.hash, fee_delta=int(self.relayfee*COIN))
+        self.restart_node(0, extra_args=self.extra_args[0])
+        self.connect_nodes(0, 1)
+        assert tx2.hash in self.nodes[0].getrawmempool()
 
         # Advance the time on the node so that we can test timelocks
         self.nodes[0].setmocktime(cur_time+600)
@@ -305,7 +310,7 @@ class BIP68Test(BitcoinTestFramework):
         tx5 = test_nonzero_locks(tx4, self.nodes[0], self.relayfee, use_height_lock=True)
         assert tx5.hash not in self.nodes[0].getrawmempool()
 
-        utxo = self.wallet.get_utxo()
+        utxo = self.wallet.get_utxo(confirmed_only=True)  # (tx4's output may be the wallet's largest coin here)
         tx5.vin.append(CTxIn(COutPoint(int(utxo["txid"], 16), utxo["vout"]), nSequence=1))
         tx5.vout[0].nValue += int(utxo["value"]*COIN)
         self.wallet.sign_tx(tx=tx5)
@@ -329,8 +334,9 @@ class BIP68Test(BitcoinTestFramework):
         # diagram above).
         # This would cause tx2 to be added back to the mempool, which in turn causes
         # tx3 to be removed.
+        block_time = tmpl['curtime'] + 1  # (DigitalGold: each block strictly after its predecessor)
         for i in range(2):
-            block = create_block(tmpl=tmpl, ntime=cur_time)
+            block = create_block(tmpl=tmpl, ntime=block_time + i)
             block.solve()
             tip = block.sha256
             assert_equal(None if i == 1 else 'inconclusive', self.nodes[0].submitblock(block.serialize().hex()))
@@ -345,7 +351,11 @@ class BIP68Test(BitcoinTestFramework):
 
         # Reset the chain and get rid of the mocktimed-blocks
         self.nodes[0].setmocktime(0)
-        self.nodes[0].invalidateblock(self.nodes[0].getblockhash(cur_height+1))
+        reset_hash = self.nodes[0].getblockhash(cur_height+1)
+        # (DigitalGold: node 1 would reject the replacement chain, which forks deeper than its maximum
+        # reorganization depth and is older than its sync checkpoint, so reset it the same way)
+        for node in self.nodes:
+            node.invalidateblock(reset_hash)
         self.generate(self.wallet, 10, sync_fun=self.no_op)
 
     # Make sure that BIP68 isn't being used to validate blocks prior to

@@ -371,7 +371,7 @@ def initialize_datadir(dirname, n, chain, disable_autoconnect=True):
 
 def write_config(config_path, *, n, chain, extra_config="", disable_autoconnect=True):
     # Translate chain subdirectory name to config name
-    if chain == 'testnet3':
+    if chain in ('testnet3', 'testnet'):
         chain_name_conf_arg = 'testnet'
         chain_name_conf_section = 'test'
     else:
@@ -420,13 +420,13 @@ def get_temp_default_datadir(temp_dir: pathlib.Path) -> Tuple[dict, pathlib.Path
     temp_dir, as well as the complete path it would return."""
     if sys.platform == "win32":
         env = dict(APPDATA=str(temp_dir))
-        datadir = temp_dir / "Bitcoin"
+        datadir = temp_dir / "DigitalGold"
     else:
         env = dict(HOME=str(temp_dir))
         if sys.platform == "darwin":
             datadir = temp_dir / "Library/Application Support/Bitcoin"
         else:
-            datadir = temp_dir / ".bitcoin"
+            datadir = temp_dir / ".digitalgold"
     return env, datadir
 
 
@@ -532,7 +532,9 @@ def mine_large_block(test_framework, mini_wallet, node):
     # generate a 66k transaction,
     # and 14 of them is close to the 1MB block limit
     txouts = gen_return_txouts()
-    fee = 100 * node.getnetworkinfo()["relayfee"]
+    # DigitalGold: the consensus minimum fee is 0.0001 DGD/kB, so a 66k transaction needs
+    # more than 100 times the (0.00001 DGD/kB) relay fee
+    fee = 1000 * node.getnetworkinfo()["relayfee"]
     create_lots_of_big_transactions(mini_wallet, node, fee, 14, txouts)
     test_framework.generate(node, 1)
 

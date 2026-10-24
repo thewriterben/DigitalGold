@@ -10,7 +10,7 @@ import uuid
 from decimal import Decimal
 from test_framework.address import output_key_to_p2tr
 from test_framework.key import H_POINT
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_equal
 from test_framework.descriptors import descsum_create
 from test_framework.script import (
@@ -197,6 +197,7 @@ class WalletTaprootTest(BitcoinTestFramework):
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
+        raise SkipTest("Taproot is not active on DigitalGold's regtest")
         self.skip_if_no_wallet()
         self.skip_if_no_sqlite()
 

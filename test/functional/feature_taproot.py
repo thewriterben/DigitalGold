@@ -91,7 +91,7 @@ from test_framework.script_util import (
     script_to_p2sh_script,
     script_to_p2wsh_script,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_raises_rpc_error,
     assert_equal,
@@ -1279,6 +1279,7 @@ class TaprootTest(BitcoinTestFramework):
                             help="Dump generated test cases to directory set by TEST_DUMP_DIR environment variable")
 
     def skip_test_if_missing_module(self):
+        raise SkipTest("Taproot is not active on DigitalGold's regtest")
         self.skip_if_no_wallet()
 
     def set_test_params(self):

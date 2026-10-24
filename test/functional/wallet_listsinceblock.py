@@ -42,7 +42,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
         self.test_reorg()
         self.test_double_spend()
         self.test_double_send()
-        self.double_spends_filtered()
+        # self.double_spends_filtered()  # requires fee bumping (RBF), which DigitalGold does not support
         self.test_targetconfirmations()
         if self.options.descriptors:
             self.test_desc()

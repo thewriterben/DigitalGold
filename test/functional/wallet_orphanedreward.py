@@ -33,15 +33,18 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
         # Let the block reward mature and send coins including both
         # the existing balance and the block reward.
         self.generate(self.nodes[0], 150)
-        assert_equal(self.nodes[1].getbalance(), 10 + 25)
+        assert_equal(self.nodes[1].getbalance(), 10 + 1000)
         pre_reorg_conf_bals = self.nodes[1].getbalances()
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 30)
         orig_chain_tip = self.nodes[0].getbestblockhash()
         self.sync_mempools()
 
         # Orphan the block reward and make sure that the original coins
-        # from the wallet can still be spent.
+        # from the wallet can still be spent. (DigitalGold limits reorgs to 10
+        # blocks, so node 1 invalidates the block as well instead of following
+        # node 0's deep reorg.)
         self.nodes[0].invalidateblock(blk)
+        self.nodes[1].invalidateblock(blk)
         blocks = self.generate(self.nodes[0], 152)
         conflict_block = blocks[0]
         # We expect the descendants of orphaned rewards to no longer be considered
@@ -49,6 +52,7 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
           "trusted": 10,
           "untrusted_pending": 0,
           "immature": 0,
+          "stake": 0,
         })
         # And the unconfirmed tx to be abandoned
         assert_equal(self.nodes[1].gettransaction(txid)["details"][0]["abandoned"], True)
@@ -60,8 +64,9 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
 
         # If the orphaned reward is reorged back into the main chain, any unconfirmed
         # descendant txs at the time of the original reorg remain abandoned.
-        self.nodes[0].invalidateblock(conflict_block)
-        self.nodes[0].reconsiderblock(blk)
+        for node in self.nodes:
+            node.invalidateblock(conflict_block)
+            node.reconsiderblock(blk)
         assert_equal(self.nodes[0].getbestblockhash(), orig_chain_tip)
         self.generate(self.nodes[0], 3)
 

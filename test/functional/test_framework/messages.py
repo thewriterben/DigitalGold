@@ -34,7 +34,7 @@ from test_framework.siphash import siphash256
 from test_framework.util import assert_equal
 
 MAX_LOCATOR_SZ = 101
-MAX_BLOCK_WEIGHT = 4000000
+MAX_BLOCK_WEIGHT = 8000000
 MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
@@ -556,7 +556,7 @@ class CTransaction:
 
     def __init__(self, tx=None):
         if tx is None:
-            self.nVersion = 0
+            self.nVersion = 2  # CTransaction::CURRENT_VERSION; 0 is rejected as non-standard
             self.vin = []
             self.vout = []
             self.wit = CTxWitness()
@@ -702,18 +702,21 @@ class CBlockHeader:
         self.sha256 = None
         self.hash = None
 
-    def deserialize(self, f):
+    # DigitalGold serializes the proof-of-stake flags (nFlags) only on the P2P wire
+    # (SER_POSMARKER); RPC hex, REST output and the block hash do not include them.
+    def deserialize(self, f, with_flags=False):
         self.nVersion = struct.unpack("<i", f.read(4))[0]
         self.hashPrevBlock = deser_uint256(f)
         self.hashMerkleRoot = deser_uint256(f)
         self.nTime = struct.unpack("<I", f.read(4))[0]
         self.nBits = struct.unpack("<I", f.read(4))[0]
         self.nNonce = struct.unpack("<I", f.read(4))[0]
-        self.nFlags = struct.unpack("<I", f.read(4))[0]
+        if with_flags:
+            self.nFlags = struct.unpack("<I", f.read(4))[0]
         self.sha256 = None
         self.hash = None
 
-    def serialize(self):
+    def serialize(self, with_flags=False):
         r = b""
         r += struct.pack("<i", self.nVersion)
         r += ser_uint256(self.hashPrevBlock)
@@ -721,7 +724,8 @@ class CBlockHeader:
         r += struct.pack("<I", self.nTime)
         r += struct.pack("<I", self.nBits)
         r += struct.pack("<I", self.nNonce)
-        r += struct.pack("<I", self.nFlags)
+        if with_flags:
+            r += struct.pack("<I", self.nFlags)
         return r
 
     def calc_sha256(self):
@@ -747,7 +751,7 @@ class CBlockHeader:
                time.ctime(self.nTime), self.nBits, self.nNonce, self.nFlags)
 
 BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
-assert_equal(BLOCK_HEADER_SIZE, 84)
+assert_equal(BLOCK_HEADER_SIZE, 80)  # 84 only on the P2P wire (nFlags, SER_POSMARKER)
 
 class CBlock(CBlockHeader):
     __slots__ = ("vtx", "vchBlockSig",)
@@ -757,14 +761,14 @@ class CBlock(CBlockHeader):
         self.vtx = []
         self.vchBlockSig = b""
 
-    def deserialize(self, f):
-        super().deserialize(f)
+    def deserialize(self, f, with_flags=False):
+        super().deserialize(f, with_flags=with_flags)
         self.vtx = deser_vector(f, CTransaction)
         self.vchBlockSig = deser_string(f)
 
-    def serialize(self, with_witness=True):
+    def serialize(self, with_witness=True, with_flags=False):
         r = b""
-        r += super().serialize()
+        r += super().serialize(with_flags=with_flags)
         if with_witness:
             r += ser_vector(self.vtx, "serialize_with_witness")
         else:
@@ -879,7 +883,7 @@ class P2PHeaderAndShortIDs:
         self.prefilled_txn = []
 
     def deserialize(self, f):
-        self.header.deserialize(f)
+        self.header.deserialize(f, with_flags=True)
         self.nonce = struct.unpack("<Q", f.read(8))[0]
         self.vchBlockSig = deser_string(f)
         self.shortids_length = deser_compact_size(f)
@@ -893,7 +897,7 @@ class P2PHeaderAndShortIDs:
     # When using version 2 compact blocks, we must serialize with_witness.
     def serialize(self, with_witness=False):
         r = b""
-        r += self.header.serialize()
+        r += self.header.serialize(with_flags=True)
         r += struct.pack("<Q", self.nonce)
         r += ser_string(self.vchBlockSig)
         r += ser_compact_size(self.shortids_length)
@@ -979,7 +983,7 @@ class HeaderAndShortIDs:
             prefill_list = [0]
         self.header = CBlockHeader(block)
         self.nonce = nonce
-        self.vchBlockSig = vchBlockSig
+        self.vchBlockSig = block.vchBlockSig
         self.prefilled_txn = [ PrefilledTransaction(i, block.vtx[i]) for i in prefill_list ]
         self.shortids = []
         self.use_witness = use_witness
@@ -1097,13 +1101,14 @@ class CMerkleBlock:
         self.header = CBlockHeader()
         self.txn = CPartialMerkleTree()
 
-    def deserialize(self, f):
-        self.header.deserialize(f)
+    def deserialize(self, f, with_flags=False):
+        # with_flags: the P2P merkleblock message carries the header's nFlags, an RPC proof does not
+        self.header.deserialize(f, with_flags=with_flags)
         self.txn.deserialize(f)
 
-    def serialize(self):
+    def serialize(self, with_flags=False):
         r = b""
-        r += self.header.serialize()
+        r += self.header.serialize(with_flags=with_flags)
         r += self.txn.serialize()
         return r
 
@@ -1349,10 +1354,10 @@ class msg_block:
             self.block = block
 
     def deserialize(self, f):
-        self.block.deserialize(f)
+        self.block.deserialize(f, with_flags=True)
 
     def serialize(self):
-        return self.block.serialize()
+        return self.block.serialize(with_flags=True)
 
     def __repr__(self):
         return "msg_block(block=%s)" % (repr(self.block))
@@ -1377,7 +1382,7 @@ class msg_generic:
 class msg_no_witness_block(msg_block):
     __slots__ = ()
     def serialize(self):
-        return self.block.serialize(with_witness=False)
+        return self.block.serialize(with_witness=False, with_flags=True)
 
 
 class msg_getaddr:
@@ -1525,13 +1530,16 @@ class msg_headers:
 
     def deserialize(self, f):
         # comment in bitcoind indicates these should be deserialized as blocks
-        blocks = deser_vector(f, CBlock)
-        for x in blocks:
-            self.headers.append(CBlockHeader(x))
+        for _ in range(deser_compact_size(f)):
+            block = CBlock()
+            block.deserialize(f, with_flags=True)
+            self.headers.append(CBlockHeader(block))
 
     def serialize(self):
-        blocks = [CBlock(x) for x in self.headers]
-        return ser_vector(blocks)
+        r = ser_compact_size(len(self.headers))
+        for x in self.headers:
+            r += CBlock(x).serialize(with_flags=True)
+        return r
 
     def __repr__(self):
         return "msg_headers(headers=%s)" % repr(self.headers)
@@ -1548,10 +1556,10 @@ class msg_merkleblock:
             self.merkleblock = merkleblock
 
     def deserialize(self, f):
-        self.merkleblock.deserialize(f)
+        self.merkleblock.deserialize(f, with_flags=True)
 
     def serialize(self):
-        return self.merkleblock.serialize()
+        return self.merkleblock.serialize(with_flags=True)
 
     def __repr__(self):
         return "msg_merkleblock(merkleblock=%s)" % (repr(self.merkleblock))

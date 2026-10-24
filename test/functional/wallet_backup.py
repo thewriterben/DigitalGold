@@ -146,9 +146,10 @@ class WalletBackupTest(BitcoinTestFramework):
         self.generate(self.nodes[2], 1)
         self.generate(self.nodes[3], COINBASE_MATURITY)
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        assert_equal(self.nodes[2].getbalance(), 50)
+        # DigitalGold: the regtest block reward is 1000 DGD
+        assert_equal(self.nodes[0].getbalance(), 1000)
+        assert_equal(self.nodes[1].getbalance(), 1000)
+        assert_equal(self.nodes[2].getbalance(), 1000)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -178,9 +179,11 @@ class WalletBackupTest(BitcoinTestFramework):
         balance3 = self.nodes[3].getbalance()
         total = balance0 + balance1 + balance2 + balance3
 
-        # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 5700.
-        assert_equal(total, 5700)
+        # At this point, there are 34 blocks (13 for setup, then 10 rounds, then 11.)
+        # 24 are mature, so the sum of all wallets should be 24 * 1000 = 24000 minus the
+        # fees paid in the rounds (DigitalGold does not pay transaction fees to the miner).
+        fees = sum(-tx['fee'] for node_num in range(3) for tx in self.nodes[node_num].listtransactions("*", 1000) if tx['category'] == 'send')
+        assert_equal(total, 24000 - fees)
 
         ##
         # Test restoring spender wallets from backups

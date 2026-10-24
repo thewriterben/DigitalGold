@@ -11,27 +11,27 @@ from test_framework.util import (
     assert_raises_rpc_error,
 )
 
-BECH32_VALID = 'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
-BECH32_VALID_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U33RAH7R'
-BECH32_VALID_MULTISIG = 'bcrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
+BECH32_VALID = 'dgrt1qtmp74ayg7p24uslctssvjm06q5phz4yrljw963'
+BECH32_VALID_CAPITALS = 'DGRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U3GDT6H7'
+BECH32_VALID_MULTISIG = 'dgrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqt02gxz'
 
-BECH32_INVALID_BECH32 = 'bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqdmchcc'
-BECH32_INVALID_BECH32M = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7k35mrzd'
-BECH32_INVALID_VERSION = 'bcrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqynjegk'
-BECH32_INVALID_SIZE = 'bcrt1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25430mtr'
-BECH32_INVALID_V0_SIZE = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqq5k3my'
-BECH32_INVALID_PREFIX = 'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx'
-BECH32_TOO_LONG = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23m'
-BECH32_ONE_ERROR = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_ONE_ERROR_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U32RAH7R'
-BECH32_TWO_ERRORS = 'bcrt1qax9suht3qv95sw33xavx8crpxduefdrsvgsklu' # should be bcrt1qax9suht3qv95sw33wavx8crpxduefdrsvgsklx
-BECH32_NO_SEPARATOR = 'bcrtq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_INVALID_CHAR = 'bcrt1q04oldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_MULTISIG_TWO_ERRORS = 'bcrt1qdg3myrgvzw7ml8q0ejxhlkyxn7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
-BECH32_WRONG_VERSION = 'bcrt1ptmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
+BECH32_INVALID_BECH32 = 'dgrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq34zrg2'
+BECH32_INVALID_BECH32M = 'dgrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kg6dwts'
+BECH32_INVALID_VERSION = 'dgrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqcagdcy'
+BECH32_INVALID_SIZE = 'dgrt1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25j2xmzu'
+BECH32_INVALID_V0_SIZE = 'dgrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kqq75jwv2'
+BECH32_INVALID_PREFIX = 'dg1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kj4qtyn'
+BECH32_TOO_LONG = 'dgrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23m'
+BECH32_ONE_ERROR = 'dgrt1q049edschfnwystcqnsvyfpj23mpsg3jcqrkg03'
+BECH32_ONE_ERROR_CAPITALS = 'DGRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U32DT6H7'
+BECH32_TWO_ERRORS = 'dgrt1qax9suht3qv95sw330avx8crpxduefdrs4xxmku' # should be dgrt1qax9suht3qv95sw33wavx8crpxduefdrs4xxmkm
+BECH32_NO_SEPARATOR = 'dgrtq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
+BECH32_INVALID_CHAR = 'dgrt1q04oldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
+BECH32_MULTISIG_TWO_ERRORS = 'dgrt1qdg3myrgvzw7mlxq0ejxhlkyxu7vl9r56yzkfgvzclrf4hkpx9yfqt02gxz'
+BECH32_WRONG_VERSION = 'dgrt1ptmp74ayg7p24uslctssvjm06q5phz4yrljw963'
 
 BASE58_VALID = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
-BASE58_INVALID_PREFIX = '17VZNX1SN5NtKa8UQFxwQbFeFc3iqRYhem'
+BASE58_INVALID_PREFIX = 'GQLUneLPLvzBQ3RmLCd3qMbYAmqZsRi736'
 BASE58_INVALID_CHECKSUM = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJJfn'
 BASE58_INVALID_LENGTH = '2VKf7XKMrp4bVNVmuRbyCewkP8FhGLP2E54LHDPakr9Sq5mtU2'
 
@@ -98,7 +98,7 @@ class InvalidAddressErrorMessageTest(BitcoinTestFramework):
         node = self.nodes[0]
 
         # Missing arg returns the help text
-        assert_raises_rpc_error(-1, "Return information about the given bitcoin address.", node.validateaddress)
+        assert_raises_rpc_error(-1, "Return information about the given digitalgold address.", node.validateaddress)
         # Explicit None is not allowed for required parameters
         assert_raises_rpc_error(-3, "JSON value of type null is not of expected type string", node.validateaddress, None)
 

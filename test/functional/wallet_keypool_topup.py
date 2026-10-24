@@ -44,7 +44,7 @@ class KeypoolRestoreTest(BitcoinTestFramework):
         self.connect_nodes(0, 2)
         self.connect_nodes(0, 3)
 
-        for i, output_type in enumerate(["legacy", "p2sh-segwit", "bech32"]):
+        for i, output_type in enumerate(["legacy", "bech32"]):  # DigitalGold refuses p2sh-segwit addresses
 
             self.log.info("Generate keys for wallet with address type: {}".format(output_type))
             idx = i+1
@@ -55,9 +55,9 @@ class KeypoolRestoreTest(BitcoinTestFramework):
 
             # Make sure we're creating the outputs we expect
             address_details = self.nodes[idx].validateaddress(addr_extpool)
-            if i == 0:
+            if output_type == "legacy":
                 assert not address_details["isscript"] and not address_details["iswitness"]
-            elif i == 1:
+            elif output_type == "p2sh-segwit":
                 assert address_details["isscript"] and not address_details["iswitness"]
             else:
                 assert not address_details["isscript"] and address_details["iswitness"]

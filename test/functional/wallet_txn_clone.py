@@ -44,12 +44,12 @@ class TxnMallTest(BitcoinTestFramework):
 
     def run_test(self):
         if self.options.segwit:
-            output_type = "p2sh-segwit"
+            output_type = "bech32"  # DigitalGold refuses p2sh-segwit addresses
         else:
             output_type = "legacy"
 
         # All nodes should start with 1,250 BTC:
-        starting_balance = 1250
+        starting_balance = 50000  # DigitalGold: 50 block rewards of 1000 DGD from the cached chain
         for i in range(3):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
 
@@ -102,8 +102,7 @@ class TxnMallTest(BitcoinTestFramework):
         # Node0's balance should be starting balance, plus 50BTC for another
         # matured block, minus tx1 and tx2 amounts, and minus transaction fees:
         expected = starting_balance + node0_tx1["fee"] + node0_tx2["fee"]
-        if self.options.mine_block:
-            expected += 50
+        # (all of node0's cached block rewards are already mature, so mining adds nothing)
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -141,11 +140,7 @@ class TxnMallTest(BitcoinTestFramework):
         assert_equal(tx1_clone["confirmations"], 2)
         assert_equal(tx2["confirmations"], 1)
 
-        # Check node0's total balance; should be same as before the clone, + 100 BTC for 2 matured,
-        # less possible orphaned matured subsidy
-        expected += 100
-        if (self.options.mine_block):
-            expected -= 50
+        # Check node0's total balance; should be same as before the clone
         assert_equal(self.nodes[0].getbalance(), expected)
 
 

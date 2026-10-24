@@ -27,7 +27,7 @@ class P2PLeakTxTest(BitcoinTestFramework):
         self.miniwallet = MiniWallet(self.gen_node)
 
         self.test_tx_in_block()
-        self.test_notfound_on_replaced_tx()
+        # self.test_notfound_on_replaced_tx()  # requires RBF, which DigitalGold does not support
         self.test_notfound_on_unannounced_tx()
 
     def test_tx_in_block(self):

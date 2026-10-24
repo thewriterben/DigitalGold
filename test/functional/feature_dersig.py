@@ -68,37 +68,16 @@ class BIP66Test(BitcoinTestFramework):
 
         self.test_dersig_info(is_active=False)
 
-        self.log.info("Mining %d blocks", DERSIG_HEIGHT - 2)
-        self.coinbase_txids = [self.nodes[0].getblock(b)['tx'][0] for b in self.generate(self.miniwallet, DERSIG_HEIGHT - 2)]
+        self.log.info("Mining %d blocks", DERSIG_HEIGHT - 1)
+        self.coinbase_txids = [self.nodes[0].getblock(b)['tx'][0] for b in self.generate(self.miniwallet, DERSIG_HEIGHT - 1)]
 
-        self.log.info("Test that a transaction with non-DER signature can still appear in a block")
-
-        spendtx = self.create_tx(self.coinbase_txids[0])
-        unDERify(spendtx)
-        spendtx.rehash()
-
-        tip = self.nodes[0].getbestblockhash()
-        block_time = self.nodes[0].getblockheader(tip)['mediantime'] + 1
-        block = create_block(int(tip, 16), create_coinbase(DERSIG_HEIGHT - 1), block_time, txlist=[spendtx])
+        # DigitalGold enforces BIP66 from the genesis block, so there is no pre-activation
+        # phase in which a non-DER signature could still appear in a block, and block
+        # versions are not restricted either: only the post-activation rules are tested.
+        tip = int(self.nodes[0].getbestblockhash(), 16)
+        block_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['mediantime'] + 1
+        block = create_block(tip, create_coinbase(DERSIG_HEIGHT), block_time)
         block.solve()
-
-        assert_equal(self.nodes[0].getblockcount(), DERSIG_HEIGHT - 2)
-        self.test_dersig_info(is_active=False)  # Not active as of current tip and next block does not need to obey rules
-        peer.send_and_ping(msg_block(block))
-        assert_equal(self.nodes[0].getblockcount(), DERSIG_HEIGHT - 1)
-        self.test_dersig_info(is_active=True)  # Not active as of current tip, but next block must obey rules
-        assert_equal(self.nodes[0].getbestblockhash(), block.hash)
-
-        self.log.info("Test that blocks must now be at least version 3")
-        tip = block.sha256
-        block_time += 1
-        block = create_block(tip, create_coinbase(DERSIG_HEIGHT), block_time, version=2)
-        block.solve()
-
-        with self.nodes[0].assert_debug_log(expected_msgs=[f'{block.hash}, bad-version(0x00000002)']):
-            peer.send_and_ping(msg_block(block))
-            assert_equal(int(self.nodes[0].getbestblockhash(), 16), tip)
-            peer.sync_with_ping()
 
         self.log.info("Test that transactions with non-DER signatures cannot appear in a block")
         block.nVersion = 4

@@ -31,7 +31,6 @@ Start three nodes:
 """
 
 from test_framework.blocktools import (
-    COINBASE_MATURITY,
     create_block,
     create_coinbase,
 )
@@ -59,6 +58,9 @@ class BaseNode(P2PInterface):
         headers_message = msg_headers()
         headers_message.headers = [CBlockHeader(b) for b in new_blocks]
         self.send_message(headers_message)
+
+
+BURIAL_DEPTH = 19000  # > 2 weeks of 64-second blocks
 
 
 class AssumeValidTest(BitcoinTestFramework):
@@ -106,7 +108,8 @@ class AssumeValidTest(BitcoinTestFramework):
         self.tip = block.sha256
         height += 1
 
-        # Bury the block 100 deep so the coinbase output is spendable
+        # Bury the block 100 deep so the coinbase output is spendable (DigitalGold's
+        # maturity is 10, but block 102 stays the one with the invalid signature)
         for _ in range(100):
             block = create_block(self.tip, create_coinbase(height), self.block_time)
             block.solve()
@@ -129,8 +132,9 @@ class AssumeValidTest(BitcoinTestFramework):
         self.block_time += 1
         height += 1
 
-        # Bury the assumed valid block 2100 deep
-        for _ in range(2100):
+        # Bury the assumed valid block deep enough that its proof-equivalent time exceeds two
+        # weeks (DigitalGold's block spacing is 64 seconds, so 2100 blocks are not enough)
+        for _ in range(BURIAL_DEPTH):
             block = create_block(self.tip, create_coinbase(height), self.block_time)
             block.solve()
             self.blocks.append(block)
@@ -143,32 +147,32 @@ class AssumeValidTest(BitcoinTestFramework):
         self.start_node(2, extra_args=["-assumevalid=" + hex(block102.sha256)])
 
         p2p0 = self.nodes[0].add_p2p_connection(BaseNode())
-        p2p0.send_header_for_blocks(self.blocks[0:2000])
-        p2p0.send_header_for_blocks(self.blocks[2000:])
+        for i in range(0, len(self.blocks), 2000):
+            p2p0.send_header_for_blocks(self.blocks[i:i + 2000])
 
         # Send blocks to node0. Block 102 will be rejected.
         self.send_blocks_until_disconnected(p2p0)
-        self.wait_until(lambda: self.nodes[0].getblockcount() >= COINBASE_MATURITY + 1)
-        assert_equal(self.nodes[0].getblockcount(), COINBASE_MATURITY + 1)
+        self.wait_until(lambda: self.nodes[0].getblockcount() >= 101)
+        assert_equal(self.nodes[0].getblockcount(), 101)
 
         p2p1 = self.nodes[1].add_p2p_connection(BaseNode())
-        p2p1.send_header_for_blocks(self.blocks[0:2000])
-        p2p1.send_header_for_blocks(self.blocks[2000:])
+        for i in range(0, len(self.blocks), 2000):
+            p2p1.send_header_for_blocks(self.blocks[i:i + 2000])
 
         # Send all blocks to node1. All blocks will be accepted.
-        for i in range(2202):
-            p2p1.send_message(msg_block(self.blocks[i]))
-        # Syncing 2200 blocks can take a while on slow systems. Give it plenty of time to sync.
+        for block in self.blocks:
+            p2p1.send_message(msg_block(block))
+        # Syncing this many blocks can take a while on slow systems. Give it plenty of time to sync.
         p2p1.sync_with_ping(960)
-        assert_equal(self.nodes[1].getblock(self.nodes[1].getbestblockhash())['height'], 2202)
+        assert_equal(self.nodes[1].getblock(self.nodes[1].getbestblockhash())['height'], len(self.blocks))
 
         p2p2 = self.nodes[2].add_p2p_connection(BaseNode())
         p2p2.send_header_for_blocks(self.blocks[0:200])
 
         # Send blocks to node2. Block 102 will be rejected.
         self.send_blocks_until_disconnected(p2p2)
-        self.wait_until(lambda: self.nodes[2].getblockcount() >= COINBASE_MATURITY + 1)
-        assert_equal(self.nodes[2].getblockcount(), COINBASE_MATURITY + 1)
+        self.wait_until(lambda: self.nodes[2].getblockcount() >= 101)
+        assert_equal(self.nodes[2].getblockcount(), 101)
 
 
 if __name__ == '__main__':

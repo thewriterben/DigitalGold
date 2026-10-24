@@ -101,40 +101,18 @@ class BIP65Test(BitcoinTestFramework):
 
         self.test_cltv_info(is_active=False)
 
-        self.log.info("Mining %d blocks", CLTV_HEIGHT - 2)
+        self.log.info("Mining %d blocks", CLTV_HEIGHT - 1)
         self.generate(wallet, 10)
-        self.generate(self.nodes[0], CLTV_HEIGHT - 2 - 10)
-        assert_equal(self.nodes[0].getblockcount(), CLTV_HEIGHT - 2)
+        self.generate(self.nodes[0], CLTV_HEIGHT - 1 - 10)
+        assert_equal(self.nodes[0].getblockcount(), CLTV_HEIGHT - 1)
 
-        self.log.info("Test that invalid-according-to-CLTV transactions can still appear in a block")
-
-        # create one invalid tx per CLTV failure reason (5 in total) and collect them
-        invalid_cltv_txs = []
-        for i in range(5):
-            spendtx = wallet.create_self_transfer()['tx']
-            cltv_invalidate(spendtx, i)
-            invalid_cltv_txs.append(spendtx)
-
-        tip = self.nodes[0].getbestblockhash()
-        block_time = self.nodes[0].getblockheader(tip)['mediantime'] + 1
-        block = create_block(int(tip, 16), create_coinbase(CLTV_HEIGHT - 1), block_time, version=3, txlist=invalid_cltv_txs)
+        # DigitalGold enforces BIP65 from the genesis block, so there is no pre-activation
+        # phase in which these transactions could still appear in a block, and block
+        # versions are not restricted either: only the post-activation rules are tested.
+        tip = int(self.nodes[0].getbestblockhash(), 16)
+        block_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['mediantime'] + 1
+        block = create_block(tip, create_coinbase(CLTV_HEIGHT), block_time)
         block.solve()
-
-        self.test_cltv_info(is_active=False)  # Not active as of current tip and next block does not need to obey rules
-        peer.send_and_ping(msg_block(block))
-        self.test_cltv_info(is_active=True)  # Not active as of current tip, but next block must obey rules
-        assert_equal(self.nodes[0].getbestblockhash(), block.hash)
-
-        self.log.info("Test that blocks must now be at least version 4")
-        tip = block.sha256
-        block_time += 1
-        block = create_block(tip, create_coinbase(CLTV_HEIGHT), block_time, version=3)
-        block.solve()
-
-        with self.nodes[0].assert_debug_log(expected_msgs=[f'{block.hash}, bad-version(0x00000003)']):
-            peer.send_and_ping(msg_block(block))
-            assert_equal(int(self.nodes[0].getbestblockhash(), 16), tip)
-            peer.sync_with_ping()
 
         self.log.info("Test that invalid-according-to-CLTV transactions cannot appear in a block")
         block.nVersion = 4

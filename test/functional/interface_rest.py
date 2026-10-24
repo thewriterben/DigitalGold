@@ -333,8 +333,8 @@ class RESTTest (BitcoinTestFramework):
         # Check that there are exactly 3 transactions in the TX memory pool before generating the block
         json_obj = self.test_rest_request("/mempool/info")
         assert_equal(json_obj['size'], 3)
-        # the size of the memory pool should be greater than 3x ~100 bytes
-        assert_greater_than(json_obj['bytes'], 300)
+        # the size of the memory pool should be greater than 3x ~90 bytes
+        assert_greater_than(json_obj['bytes'], 270)
 
         mempool_info = self.nodes[0].getmempoolinfo()
         assert_equal(json_obj, mempool_info)

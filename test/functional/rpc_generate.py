@@ -23,7 +23,7 @@ class RPCGenerateTest(BitcoinTestFramework):
 
     def test_generatetoaddress(self):
         self.generatetoaddress(self.nodes[0], 1, 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ')
-        assert_raises_rpc_error(-5, "Invalid address", self.generatetoaddress, self.nodes[0], 1, '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
+        assert_raises_rpc_error(-5, "Invalid address", self.generatetoaddress, self.nodes[0], 1, 'gKEdTzwKZ9jeSFbPBKHwUL26RGVcrxyJdh')
 
     def test_generateblock(self):
         node = self.nodes[0]
@@ -49,7 +49,7 @@ class RPCGenerateTest(BitcoinTestFramework):
 
         self.log.info('Generate an empty block to a combo descriptor with compressed pubkey')
         combo_key = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
-        combo_address = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080'
+        combo_address = 'dgrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kaxazwj'
         hash = self.generateblock(node, 'combo(' + combo_key + ')', [])['hash']
         block = node.getblock(hash, 2)
         assert_equal(len(block['tx']), 1)

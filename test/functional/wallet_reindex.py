@@ -58,8 +58,8 @@ class WalletReindexTest(BitcoinTestFramework):
         # Depending on the wallet type, the birth time changes.
         wallet_birthtime = wallet_watch_only.getwalletinfo()['birthtime']
         if self.options.descriptors:
-            # As blocks were generated every 10 min, the chain MTP timestamp is node_time - 60 min.
-            assert_equal(self.node_time - BLOCK_TIME * 6, wallet_birthtime)
+            # DigitalGold's median time past is the tip's own time, i.e. node_time - 10 min.
+            assert_equal(self.node_time - BLOCK_TIME, wallet_birthtime)
         else:
             # No way of importing scripts/addresses with a custom time on a legacy wallet.
             # It's always set to the beginning of time.

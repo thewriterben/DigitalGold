@@ -23,6 +23,7 @@ from test_framework.messages import (
     CTxOut,
     MAX_BLOCK_WEIGHT,
     SEQUENCE_FINAL,
+    ser_string,
     uint256_from_compact,
     uint256_from_str,
 )
@@ -64,15 +65,16 @@ class CBrokenBlock(CBlock):
         self.vtx = copy.deepcopy(base_block.vtx)
         self.hashMerkleRoot = self.calc_merkle_root()
 
-    def serialize(self, with_witness=False):
+    def serialize(self, with_witness=False, with_flags=False):
         r = b""
-        r += super(CBlock, self).serialize()
+        r += super(CBlock, self).serialize(with_flags=with_flags)
         r += struct.pack("<BQ", 255, len(self.vtx))
         for tx in self.vtx:
             if with_witness:
                 r += tx.serialize_with_witness()
             else:
                 r += tx.serialize_without_witness()
+        r += ser_string(self.vchBlockSig)  # DigitalGold blocks end with the block signature
         return r
 
     def normal_serialize(self):
@@ -103,13 +105,8 @@ class FullBlockTest(BitcoinTestFramework):
         self.block_heights[self.genesis_hash] = 0
         self.spendable_outputs = []
 
-        # Create a new block
-        b_dup_cb = self.next_block('dup_cb')
-        b_dup_cb.vtx[0].vin[0].scriptSig = DUPLICATE_COINBASE_SCRIPT_SIG
-        b_dup_cb.vtx[0].rehash()
-        duplicate_tx = b_dup_cb.vtx[0]
-        b_dup_cb = self.update_block('dup_cb', [])
-        self.send_blocks([b_dup_cb])
+        # (DigitalGold enforces BIP34 from the genesis block, so a coinbase with a wrong height
+        # cannot be mined and the BIP30 duplicate-coinbase checks below are not applicable)
 
         b0 = self.next_block(0)
         self.save_spendable_output()
@@ -295,7 +292,7 @@ class FullBlockTest(BitcoinTestFramework):
         #                      \-> b3 (1) -> b4 (2)
         self.log.info("Reject a block spending an immature coinbase.")
         self.move_tip(15)
-        b20 = self.next_block(20, spend=out[7])
+        b20 = self.next_block(20, spend=self.blocks[15].vtx[0])  # one block deep (DigitalGold matures after 10)
         self.send_blocks([b20], success=False, reject_reason='bad-txns-premature-spend-of-coinbase', reconnect=True)
 
         # Attempt to spend a coinbase at depth too low (on a fork this time)
@@ -308,7 +305,7 @@ class FullBlockTest(BitcoinTestFramework):
         b21 = self.next_block(21, spend=out[6])
         self.send_blocks([b21], False)
 
-        b22 = self.next_block(22, spend=out[5])
+        b22 = self.next_block(22, spend=self.blocks[21].vtx[0])  # one block deep (DigitalGold matures after 10)
         self.send_blocks([b22], success=False, reject_reason='bad-txns-premature-spend-of-coinbase', reconnect=True)
 
         # Create a block on either side of MAX_BLOCK_WEIGHT and make sure its accepted/rejected
@@ -319,6 +316,9 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Accept a block of weight MAX_BLOCK_WEIGHT")
         self.move_tip(15)
         b23 = self.next_block(23, spend=out[6])
+        # DigitalGold: the bloated transaction below must pay the minimum fee, so give it a 1 DGD input
+        b23.vtx[1] = self.create_and_sign_transaction(out[6], 100000000)
+        b23 = self.update_block(23, [])
         tx = CTransaction()
         script_length = (MAX_BLOCK_WEIGHT - b23.get_weight() - 276) // 4
         script_output = CScript([b'\x00' * script_length])
@@ -333,6 +333,8 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block of weight MAX_BLOCK_WEIGHT + 4")
         self.move_tip(15)
         b24 = self.next_block(24, spend=out[6])
+        b24.vtx[1] = self.create_and_sign_transaction(out[6], 100000000)
+        b24 = self.update_block(24, [])
         script_length = (MAX_BLOCK_WEIGHT - b24.get_weight() - 276) // 4
         script_output = CScript([b'\x00' * (script_length + 1)])
         tx.vout = [CTxOut(0, script_output)]
@@ -477,11 +479,13 @@ class FullBlockTest(BitcoinTestFramework):
         redeem_script = CScript([self.coinbase_pubkey] + [OP_2DUP, OP_CHECKSIGVERIFY] * 5 + [OP_CHECKSIG])
         p2sh_script = script_to_p2sh_script(redeem_script)
 
-        # Create a transaction that spends one satoshi to the p2sh_script, the rest to OP_TRUE
-        # This must be signed because it is spending a coinbase
+        # Create a transaction that spends P2SH_VALUE satoshis to the p2sh_script, the rest (minus a fee,
+        # DigitalGold requires one) to OP_TRUE. This must be signed because it is spending a coinbase
+        P2SH_VALUE = 10000
+        FEE = 2000
         spend = out[11]
-        tx = self.create_tx(spend, 0, 1, p2sh_script)
-        tx.vout.append(CTxOut(spend.vout[0].nValue - 1, CScript([OP_TRUE])))
+        tx = self.create_tx(spend, 0, P2SH_VALUE, p2sh_script)
+        tx.vout.append(CTxOut(spend.vout[0].nValue - P2SH_VALUE - FEE, CScript([OP_TRUE])))
         self.sign_tx(tx, spend)
         tx.rehash()
         b39 = self.update_block(39, [tx])
@@ -492,8 +496,8 @@ class FullBlockTest(BitcoinTestFramework):
         tx_last = tx
         total_weight = b39.get_weight()
         while total_weight < MAX_BLOCK_WEIGHT:
-            tx_new = self.create_tx(tx_last, 1, 1, p2sh_script)
-            tx_new.vout.append(CTxOut(tx_last.vout[1].nValue - 1, CScript([OP_TRUE])))
+            tx_new = self.create_tx(tx_last, 1, P2SH_VALUE, p2sh_script)
+            tx_new.vout.append(CTxOut(tx_last.vout[1].nValue - P2SH_VALUE - FEE, CScript([OP_TRUE])))
             tx_new.rehash()
             total_weight += tx_new.get_weight()
             if total_weight >= MAX_BLOCK_WEIGHT:
@@ -529,10 +533,12 @@ class FullBlockTest(BitcoinTestFramework):
         assert_equal(numTxes <= b39_outputs, True)
 
         lastOutpoint = COutPoint(b40.vtx[1].sha256, 0)
+        last_value = b40.vtx[1].vout[0].nValue
         new_txs = []
         for i in range(1, numTxes + 1):
             tx = CTransaction()
-            tx.vout.append(CTxOut(1, CScript([OP_TRUE])))
+            last_value += P2SH_VALUE // 2  # half of the P2SH input pays the fee, the rest accumulates
+            tx.vout.append(CTxOut(last_value, CScript([OP_TRUE])))
             tx.vin.append(CTxIn(lastOutpoint, b''))
             # second input is corresponding P2SH output from b39
             tx.vin.append(CTxIn(COutPoint(b39.vtx[i].sha256, 0), b''))
@@ -692,10 +698,10 @@ class FullBlockTest(BitcoinTestFramework):
         b54.solve()
         self.send_blocks([b54], False, force_send=True, reject_reason='time-too-old', reconnect=True)
 
-        # valid timestamp
+        # valid timestamp (DigitalGold: the median time past is the previous block's time,
+        # so the default timestamp of the new block is used)
         self.move_tip(53)
         b55 = self.next_block(55, spend=out[15])
-        b55.nTime = b35.nTime
         self.update_block(55, [])
         self.send_blocks([b55], True)
         self.save_spendable_output()
@@ -745,8 +751,9 @@ class FullBlockTest(BitcoinTestFramework):
         # b57 - a good block with 2 txs, don't submit until end
         self.move_tip(55)
         self.next_block(57)
-        tx = self.create_and_sign_transaction(out[16], 1)
-        tx1 = self.create_tx(tx, 0, 1)
+        # (DigitalGold: each transaction pays the consensus minimum fee, so the chained outputs leave room for it)
+        tx = self.create_and_sign_transaction(out[16], 10000)
+        tx1 = self.create_tx(tx, 0, 8000)
         b57 = self.update_block(57, [tx, tx1])
 
         # b56 - copy b57, add a duplicate tx
@@ -762,11 +769,11 @@ class FullBlockTest(BitcoinTestFramework):
         # b57p2 - a good block with 6 tx'es, don't submit until end
         self.move_tip(55)
         self.next_block("57p2")
-        tx = self.create_and_sign_transaction(out[16], 1)
-        tx1 = self.create_tx(tx, 0, 1)
-        tx2 = self.create_tx(tx1, 0, 1)
-        tx3 = self.create_tx(tx2, 0, 1)
-        tx4 = self.create_tx(tx3, 0, 1)
+        tx = self.create_and_sign_transaction(out[16], 10000)
+        tx1 = self.create_tx(tx, 0, 8000)
+        tx2 = self.create_tx(tx1, 0, 6000)
+        tx3 = self.create_tx(tx2, 0, 4000)
+        tx4 = self.create_tx(tx3, 0, 2000)
         b57p2 = self.update_block("57p2", [tx, tx1, tx2, tx3, tx4])
 
         # b56p2 - copy b57p2, duplicate two non-consecutive tx's
@@ -799,7 +806,7 @@ class FullBlockTest(BitcoinTestFramework):
         tx = CTransaction()
         assert len(out[17].vout) < 42
         tx.vin.append(CTxIn(COutPoint(out[17].sha256, 42), CScript([OP_TRUE]), SEQUENCE_FINAL))
-        tx.vout.append(CTxOut(0, b""))
+        tx.vout.append(CTxOut(0, CScript([OP_TRUE])))  # (DigitalGold rejects an empty output outside coinbase/coinstake as bad-txns-vout-empty)
         tx.calc_sha256()
         b58 = self.update_block(58, [tx])
         self.send_blocks([b58], success=False, reject_reason='bad-txns-inputs-missingorspent', reconnect=True)
@@ -808,7 +815,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a transaction with outputs > inputs")
         self.move_tip(57)
         self.next_block(59)
-        tx = self.create_and_sign_transaction(out[17], 51 * COIN)
+        tx = self.create_and_sign_transaction(out[17], 1001 * COIN)
         b59 = self.update_block(59, [tx])
         self.send_blocks([b59], success=False, reject_reason='bad-txns-in-belowout', reconnect=True)
 
@@ -818,48 +825,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.send_blocks([b60], True)
         self.save_spendable_output()
 
-        # Test BIP30 (reject duplicate)
-        #
-        # -> b39 (11) -> b42 (12) -> b43 (13) -> b53 (14) -> b55 (15) -> b57 (16) -> b60 ()
-        #                                                                                  \-> b61 ()
-        #
-        # Blocks are not allowed to contain a transaction whose id matches that of an earlier,
-        # not-fully-spent transaction in the same chain. To test, make identical coinbases;
-        # the second one should be rejected. See also CVE-2012-1909.
-        #
-        self.log.info("Reject a block with a transaction with a duplicate hash of a previous transaction (BIP30)")
-        self.move_tip(60)
-        b61 = self.next_block(61)
-        b61.vtx[0].vin[0].scriptSig = DUPLICATE_COINBASE_SCRIPT_SIG
-        b61.vtx[0].rehash()
-        b61 = self.update_block(61, [])
-        assert_equal(duplicate_tx.serialize(), b61.vtx[0].serialize())
-        # BIP30 is always checked on regtest, regardless of the BIP34 activation height
-        self.send_blocks([b61], success=False, reject_reason='bad-txns-BIP30', reconnect=True)
-
-        # Test BIP30 (allow duplicate if spent)
-        #
-        # -> b57 (16) -> b60 ()
-        #            \-> b_spend_dup_cb (b_dup_cb) -> b_dup_2 ()
-        #
-        self.move_tip(57)
-        self.next_block('spend_dup_cb')
-        tx = CTransaction()
-        tx.vin.append(CTxIn(COutPoint(duplicate_tx.sha256, 0)))
-        tx.vout.append(CTxOut(0, CScript([OP_TRUE])))
-        self.sign_tx(tx, duplicate_tx)
-        tx.rehash()
-        b_spend_dup_cb = self.update_block('spend_dup_cb', [tx])
-
-        b_dup_2 = self.next_block('dup_2')
-        b_dup_2.vtx[0].vin[0].scriptSig = DUPLICATE_COINBASE_SCRIPT_SIG
-        b_dup_2.vtx[0].rehash()
-        b_dup_2 = self.update_block('dup_2', [])
-        assert_equal(duplicate_tx.serialize(), b_dup_2.vtx[0].serialize())
-        assert_equal(self.nodes[0].gettxout(txid=duplicate_tx.hash, n=0)['confirmations'], 119)
-        self.send_blocks([b_spend_dup_cb, b_dup_2], success=True)
-        # The duplicate has less confirmations
-        assert_equal(self.nodes[0].gettxout(txid=duplicate_tx.hash, n=0)['confirmations'], 1)
+        # (BIP30 duplicate-coinbase tests omitted: BIP34 is enforced from genesis on DigitalGold)
 
         # Test tx.isFinal is properly rejected (not an exhaustive tx.isFinal test, that should be in data-driven transaction tests)
         #
@@ -867,7 +833,7 @@ class FullBlockTest(BitcoinTestFramework):
         #                                           \-> b62 (18)
         #
         self.log.info("Reject a block with a transaction with a nonfinal locktime")
-        self.move_tip('dup_2')
+        self.move_tip(60)
         self.next_block(62)
         tx = CTransaction()
         tx.nLockTime = 0xffffffff  # this locktime is non-final
@@ -884,7 +850,7 @@ class FullBlockTest(BitcoinTestFramework):
         #                                           \-> b63 (-)
         #
         self.log.info("Reject a block with a coinbase transaction with a nonfinal locktime")
-        self.move_tip('dup_2')
+        self.move_tip(60)
         b63 = self.next_block(63)
         b63.vtx[0].nLockTime = 0xffffffff
         b63.vtx[0].vin[0].nSequence = 0xDEADBEEF
@@ -907,8 +873,11 @@ class FullBlockTest(BitcoinTestFramework):
         #  b64 is a good block (same as b64 but w/ canonical varint)
         #
         self.log.info("Accept a valid block even if a bloated version of the block has previously been sent")
-        self.move_tip('dup_2')
+        self.move_tip(60)
         regular_block = self.next_block("64a", spend=out[18])
+        # DigitalGold: the bloated transaction below must pay the minimum fee, so give it a 1 DGD input
+        regular_block.vtx[1] = self.create_and_sign_transaction(out[18], 100000000)
+        regular_block = self.update_block("64a", [])
 
         # make it a "broken_block," with non-canonical serialization
         b64a = CBrokenBlock(regular_block)
@@ -933,7 +902,7 @@ class FullBlockTest(BitcoinTestFramework):
         node.disconnect_p2ps()
         self.reconnect_p2p()
 
-        self.move_tip('dup_2')
+        self.move_tip(60)
         b64 = CBlock(b64a)
         b64.vtx = copy.deepcopy(b64a.vtx)
         assert_equal(b64.hash, b64a.hash)
@@ -950,7 +919,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Accept a block with a transaction spending an output created in the same block")
         self.move_tip(64)
         self.next_block(65)
-        tx1 = self.create_and_sign_transaction(out[19], out[19].vout[0].nValue)
+        tx1 = self.create_and_sign_transaction(out[19], out[19].vout[0].nValue - 100000)
         tx2 = self.create_and_sign_transaction(tx1, 0)
         b65 = self.update_block(65, [tx1, tx2])
         self.send_blocks([b65], True)
@@ -963,7 +932,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a transaction spending an output created later in the same block")
         self.move_tip(65)
         self.next_block(66)
-        tx1 = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue)
+        tx1 = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 100000)
         tx2 = self.create_and_sign_transaction(tx1, 1)
         b66 = self.update_block(66, [tx2, tx1])
         self.send_blocks([b66], success=False, reject_reason='bad-txns-inputs-missingorspent', reconnect=True)
@@ -977,7 +946,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a transaction double spending a transaction created in the same block")
         self.move_tip(65)
         self.next_block(67)
-        tx1 = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue)
+        tx1 = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 100000)
         tx2 = self.create_and_sign_transaction(tx1, 1)
         tx3 = self.create_and_sign_transaction(tx1, 2)
         b67 = self.update_block(67, [tx1, tx2, tx3])
@@ -988,24 +957,24 @@ class FullBlockTest(BitcoinTestFramework):
         # -> b64 (18) -> b65 (19) -> b69 (20)
         #                        \-> b68 (20)
         #
-        # b68 - coinbase with an extra 10 satoshis,
-        #       creates a tx that has 9 satoshis from out[20] go to fees
-        #       this fails because the coinbase is trying to claim 1 satoshi too much in fees
+        # b68 - coinbase with an extra 10 satoshis
+        #       this fails because the coinbase is trying to claim more than the subsidy
+        #       (DigitalGold never pays fees to the coinbase)
         #
-        # b69 - coinbase with extra 10 satoshis, and a tx that gives a 10 satoshi fee
+        # b69 - coinbase with exactly the subsidy, and a tx that gives a fee
         #       this succeeds
         #
         self.log.info("Reject a block trying to claim too much subsidy in the coinbase transaction")
         self.move_tip(65)
         self.next_block(68, additional_coinbase_value=10)
-        tx = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 9)
+        tx = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 100000)
         b68 = self.update_block(68, [tx])
         self.send_blocks([b68], success=False, reject_reason='bad-cb-amount', reconnect=True)
 
         self.log.info("Accept a block claiming the correct subsidy in the coinbase transaction")
         self.move_tip(65)
-        b69 = self.next_block(69, additional_coinbase_value=10)
-        tx = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 10)
+        b69 = self.next_block(69)
+        tx = self.create_and_sign_transaction(out[20], out[20].vout[0].nValue - 100000)
         self.update_block(69, [tx])
         self.send_blocks([b69], True)
         self.save_spendable_output()
@@ -1036,8 +1005,8 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block containing a duplicate transaction but with the same Merkle root (Merkle tree malleability")
         self.move_tip(69)
         self.next_block(72)
-        tx1 = self.create_and_sign_transaction(out[21], 2)
-        tx2 = self.create_and_sign_transaction(tx1, 1)
+        tx1 = self.create_and_sign_transaction(out[21], 10000)
+        tx2 = self.create_and_sign_transaction(tx1, 8000)  # (DigitalGold: each transaction pays the minimum fee)
         b72 = self.update_block(72, [tx1, tx2])  # now tip is 72
         b71 = copy.deepcopy(b72)
         b71.vtx.append(tx2)   # add duplicate tx2
@@ -1203,7 +1172,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.next_block(83)
         op_codes = [OP_IF, OP_INVALIDOPCODE, OP_ELSE, OP_TRUE, OP_ENDIF]
         script = CScript(op_codes)
-        tx1 = self.create_and_sign_transaction(out[28], out[28].vout[0].nValue, script)
+        tx1 = self.create_and_sign_transaction(out[28], out[28].vout[0].nValue - 100000, script)
 
         tx2 = self.create_and_sign_transaction(tx1, 0, CScript([OP_TRUE]))
         tx2.vin[0].scriptSig = CScript([OP_FALSE])
@@ -1221,10 +1190,11 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Test re-orging blocks with OP_RETURN in them")
         self.next_block(84)
         tx1 = self.create_tx(out[29], 0, 0, CScript([OP_RETURN]))
-        tx1.vout.append(CTxOut(0, CScript([OP_TRUE])))
-        tx1.vout.append(CTxOut(0, CScript([OP_TRUE])))
-        tx1.vout.append(CTxOut(0, CScript([OP_TRUE])))
-        tx1.vout.append(CTxOut(0, CScript([OP_TRUE])))
+        # (DigitalGold: 1000 sat each, so tx2..tx5 below can pay the minimum fee)
+        tx1.vout.append(CTxOut(1000, CScript([OP_TRUE])))
+        tx1.vout.append(CTxOut(1000, CScript([OP_TRUE])))
+        tx1.vout.append(CTxOut(1000, CScript([OP_TRUE])))
+        tx1.vout.append(CTxOut(1000, CScript([OP_TRUE])))
         tx1.calc_sha256()
         self.sign_tx(tx1, out[29])
         tx1.rehash()
@@ -1262,14 +1232,22 @@ class FullBlockTest(BitcoinTestFramework):
         b89a = self.update_block("89a", [tx])
         self.send_blocks([b89a], success=False, reject_reason='bad-txns-inputs-missingorspent', reconnect=True)
 
-        self.log.info("Test a re-org of one week's worth of blocks (1088 blocks)")
-
+        self.log.info("Test a re-org of full-weight blocks within the maximum re-org depth")
+        # (Bitcoin re-orgs one week's worth of blocks (1088) here. DigitalGold refuses a fork deeper than
+        # nMaxReorganizationDepth (10 on regtest), so build a short chain of full-weight blocks and re-org its tip.)
         self.move_tip(88)
-        LARGE_REORG_SIZE = 1088
+        LARGE_REORG_SIZE = 8
+        REORG_DEPTH = 6
         blocks = []
         spend = out[32]
         for i in range(89, LARGE_REORG_SIZE + 89):
             b = self.next_block(i, spend)
+            # (DigitalGold: the full-weight transaction below must pay the consensus minimum fee of 10 sat/vbyte,
+            # so give it an input worth 0.5 DGD instead of next_block's 1 satoshi)
+            b.vtx[1].vout[0].nValue = COIN // 2
+            b.vtx[1].vin[0].scriptSig = CScript()  # (the signing helper prepends to an existing scriptSig)
+            self.sign_tx(b.vtx[1], spend)
+            b.vtx[1].rehash()
             tx = CTransaction()
             script_length = (MAX_BLOCK_WEIGHT - b.get_weight() - 276) // 4
             script_output = CScript([b'\x00' * script_length])
@@ -1284,10 +1262,10 @@ class FullBlockTest(BitcoinTestFramework):
         self.send_blocks(blocks, True, timeout=2440)
         chain1_tip = i
 
-        # now create alt chain of same length
-        self.move_tip(88)
+        # now create alt chain of same length, forking REORG_DEPTH blocks below the tip
+        self.move_tip(chain1_tip - REORG_DEPTH)
         blocks2 = []
-        for i in range(89, LARGE_REORG_SIZE + 89):
+        for i in range(chain1_tip - REORG_DEPTH + 1, chain1_tip + 1):
             blocks2.append(self.next_block("alt" + str(i)))
         self.send_blocks(blocks2, False, force_send=False)
 
@@ -1302,9 +1280,10 @@ class FullBlockTest(BitcoinTestFramework):
         block = self.next_block(chain1_tip + 2)
         self.send_blocks([block], True, timeout=2440)
 
-        self.log.info("Reject a block with an invalid block header version")
+        # (DigitalGold has no minimum block version: BIP34/65/66 are always active, so the bad-version check is gone)
+        self.log.info("Accept a block with block header version 1")
         b_v1 = self.next_block('b_v1', version=1)
-        self.send_blocks([b_v1], success=False, force_send=True, reject_reason='bad-version(0x00000001)', reconnect=True)
+        self.send_blocks([b_v1], True)
 
         self.move_tip(chain1_tip + 2)
         b_cb34 = self.next_block('b_cb34')
@@ -1349,14 +1328,13 @@ class FullBlockTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height, self.coinbase_pubkey)
+        coinbase = create_coinbase(height, self.coinbase_pubkey, nValue=1000)  # DigitalGold's regtest subsidy
         coinbase.vout[0].nValue += additional_coinbase_value
         coinbase.rehash()
         if spend is None:
             block = create_block(base_block_hash, coinbase, block_time, version=version)
         else:
-            coinbase.vout[0].nValue += spend.vout[0].nValue - 1  # all but one satoshi to fees
-            coinbase.rehash()
+            # (DigitalGold does not pay transaction fees to the coinbase: all but one satoshi are burnt)
             tx = self.create_tx(spend, 0, 1, script)  # spend 1 satoshi
             self.sign_tx(tx, spend)
             tx.rehash()

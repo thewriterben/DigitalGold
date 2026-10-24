@@ -101,10 +101,8 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         tx_orphan_1.vout = [CTxOut(nValue=8 * COIN, scriptPubKey=SCRIPT_PUB_KEY_OP_TRUE)] * 3
         tx_orphan_1.calc_sha256()
 
-        # A valid transaction with low fee
-        tx_orphan_2_no_fee = CTransaction()
-        tx_orphan_2_no_fee.vin.append(CTxIn(outpoint=COutPoint(tx_orphan_1.sha256, 0)))
-        tx_orphan_2_no_fee.vout.append(CTxOut(nValue=8 * COIN, scriptPubKey=SCRIPT_PUB_KEY_OP_TRUE))
+        # (a zero-fee orphan is left out: paying less than the minimum fee is a consensus
+        # failure on DigitalGold, which would get the peer disconnected)
 
         # A valid transaction with sufficient fee
         tx_orphan_2_valid = CTransaction()
@@ -120,7 +118,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
 
         self.log.info('Send the orphans ... ')
         # Send valid orphan txs from p2ps[0]
-        node.p2ps[0].send_txs_and_test([tx_orphan_1, tx_orphan_2_no_fee, tx_orphan_2_valid], node, success=False)
+        node.p2ps[0].send_txs_and_test([tx_orphan_1, tx_orphan_2_valid], node, success=False)
         # Send invalid tx from p2ps[1]
         node.p2ps[1].send_txs_and_test([tx_orphan_2_invalid], node, success=False)
 
@@ -141,7 +139,6 @@ class InvalidTxRequestTest(BitcoinTestFramework):
             ]
         }
         # Transactions that do not end up in the mempool:
-        # tx_orphan_2_no_fee, because it has too low fee (p2ps[0] is not disconnected for relaying that tx)
         # tx_orphan_2_invalid, because it has negative fee (p2ps[1] is disconnected for relaying that tx)
 
         self.wait_until(lambda: 1 == len(node.getpeerinfo()), timeout=12)  # p2ps[1] is no longer connected
@@ -165,7 +162,8 @@ class InvalidTxRequestTest(BitcoinTestFramework):
             node.p2ps[0].send_txs_and_test([rejected_parent], node, success=False)
 
         self.log.info('Test that a peer disconnection causes erase its transactions from the orphan pool')
-        with node.assert_debug_log(['Erased 100 orphan tx from peer=25']):
+        orphan_peer_id = node.getpeerinfo()[0]['id']
+        with node.assert_debug_log([f'Erased 100 orphan tx from peer={orphan_peer_id}']):
             self.reconnect_p2p(num_connections=1)
 
         self.log.info('Test that a transaction in the orphan pool is included in a new tip block causes erase this transaction from the orphan pool')
@@ -213,7 +211,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
 
         tip = int(node.getbestblockhash(), 16)
         height = node.getblockcount() + 1
-        block_B = create_block(tip, create_coinbase(height))
+        block_B = create_block(tip, create_coinbase(height), ntime=block_A.nTime + 1)  # (DigitalGold: strictly after block_A)
         block_B.vtx.extend([tx_withhold_until_block_B, tx_orphan_include_by_block_B])
         block_B.hashMerkleRoot = block_B.calc_merkle_root()
         block_B.solve()

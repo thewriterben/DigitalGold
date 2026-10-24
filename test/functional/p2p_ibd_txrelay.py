@@ -29,7 +29,7 @@ from test_framework.p2p import (
 from test_framework.test_framework import BitcoinTestFramework
 
 MAX_FEE_FILTER = Decimal(9170997) / COIN
-NORMAL_FEE_FILTER = Decimal(100) / COIN
+NORMAL_FEE_FILTER = Decimal(10000) / COIN  # DigitalGold's fixed minimum fee rate
 
 
 class P2PIBDTxRelayTest(BitcoinTestFramework):

@@ -894,7 +894,7 @@ class WalletMigrationTest(BitcoinTestFramework):
         self.test_direct_file()
         self.test_addressbook()
         self.test_migrate_raw_p2sh()
-        self.test_conflict_txs()
+        # self.test_conflict_txs()  # needs a mempool double spend (RBF), unsupported on DigitalGold
         self.test_hybrid_pubkey()
         self.test_failed_migration_cleanup()
 

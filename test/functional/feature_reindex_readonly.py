@@ -9,10 +9,13 @@
 import os
 import stat
 import subprocess
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 
 
 class BlockstoreReindexTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        raise SkipTest("DigitalGold has no -fastprune to split the block files")
+
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1

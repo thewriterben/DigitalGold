@@ -350,13 +350,13 @@ class SendallTest(BitcoinTestFramework):
             options={"minconf": 7})
 
         self.log.info("Test sendall only spends utxos with a specified number of confirmations when minconf is used")
-        self.wallet.sendall(recipients=[self.remainder_target], fee_rate=300, options={"minconf": 6})
+        self.wallet.sendall(recipients=[self.remainder_target], options={"minconf": 6})
 
         assert_equal(len(self.wallet.listunspent()), 1)
         assert_equal(self.wallet.listunspent()[0]['confirmations'], 3)
 
         # decrease minconf and show the remaining utxo is picked up
-        self.wallet.sendall(recipients=[self.remainder_target], fee_rate=300, options={"minconf": 3})
+        self.wallet.sendall(recipients=[self.remainder_target], options={"minconf": 3})
         assert_equal(self.wallet.getbalance(), 0)
 
     @cleanup
@@ -375,7 +375,7 @@ class SendallTest(BitcoinTestFramework):
             options={"maxconf": 1})
 
         self.log.info("Test sendall only spends utxos with a specified number of confirmations when maxconf is used")
-        self.wallet.sendall(recipients=[self.remainder_target], fee_rate=300, options={"maxconf":4})
+        self.wallet.sendall(recipients=[self.remainder_target], options={"maxconf":4})
         assert_equal(len(self.wallet.listunspent()), 1)
         assert_equal(self.wallet.listunspent()[0]['confirmations'], 6)
 
@@ -446,10 +446,10 @@ class SendallTest(BitcoinTestFramework):
         self.sendall_fails_on_specific_inputs_with_send_max()
 
         # Sendall fails when providing a fee that is too high
-        self.sendall_fails_on_high_fee()
+        # self.sendall_fails_on_high_fee()  # DigitalGold's wallet pays a fixed fee rate
 
         # Sendall fails when fee rate is lower than minimum
-        self.sendall_fails_on_low_fee()
+        # self.sendall_fails_on_low_fee()  # DigitalGold's wallet pays a fixed fee rate
 
         # Sendall succeeds with watchonly wallets spending specific UTXOs
         self.sendall_watchonly_specific_inputs()

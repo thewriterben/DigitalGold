@@ -36,18 +36,18 @@ from test_framework.wallet import MiniWallet
 
 VERSIONBITS_TOP_BITS = 0x20000000
 VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT = 28
-DEFAULT_BLOCK_MIN_TX_FEE = 100000  # default `-blockmintxfee` setting [sat/kvB]
+DEFAULT_BLOCK_MIN_TX_FEE = 1000  # default `-blockmintxfee` setting [sat/kvB]
 
 
 def assert_template(node, block, expect, rehash=True):
     if rehash:
         block.hashMerkleRoot = block.calc_merkle_root()
-    rsp = node.getblocktemplate(template_request={
+    template_request = {
         'data': block.serialize().hex(),
         'mode': 'proposal',
         'rules': ['segwit'],
-    })
-    assert_equal(rsp, expect)
+    }
+    assert_equal(node.getblocktemplate(template_request=template_request), expect)
 
 
 class MiningTest(BitcoinTestFramework):
@@ -64,7 +64,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         assert_equal(mining_info['blocks'], 200)
         assert_equal(mining_info['currentblocktx'], 0)
-        assert_equal(mining_info['currentblockweight'], 8000)
+        assert_equal(mining_info['currentblockweight'], 4000)
 
         self.log.info('test blockversion')
         self.restart_node(0, extra_args=[f'-mocktime={t}', '-blockversion=1337'])
@@ -82,7 +82,10 @@ class MiningTest(BitcoinTestFramework):
         node = self.nodes[0]
 
         # test default (no parameter), zero and a bunch of arbitrary blockmintxfee rates [sat/kvB]
-        for blockmintxfee_sat_kvb in (DEFAULT_BLOCK_MIN_TX_FEE, 0, 50, 100, 500, 2500, 5000, 21000, 333333, 2500000):
+        # DigitalGold: every transaction must pay the consensus minimum fee (1000 sat up to 200 bytes, 10 sat/vB
+        # above), so a transaction just below a lower -blockmintxfee never reaches the mempool; only settings above
+        # that minimum (and no prioritisetransaction for the zero case) can be tested.
+        for blockmintxfee_sat_kvb in (21000, 333333, 2500000):
             blockmintxfee_btc_kvb = blockmintxfee_sat_kvb / Decimal(COIN)
             if blockmintxfee_sat_kvb == DEFAULT_BLOCK_MIN_TX_FEE:
                 self.log.info(f"-> Default -blockmintxfee setting ({blockmintxfee_sat_kvb} sat/kvB)...")
@@ -96,7 +99,9 @@ class MiningTest(BitcoinTestFramework):
             tx_with_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=blockmintxfee_btc_kvb)
             assert_equal(tx_with_min_feerate["fee"], get_fee(tx_with_min_feerate["tx"].get_vsize(), blockmintxfee_btc_kvb))
             if blockmintxfee_btc_kvb > 0:
-                lowerfee_btc_kvb = blockmintxfee_btc_kvb - Decimal(10)/COIN  # 0.01 sat/vbyte lower
+                # (0.1 sat/vbyte lower: DigitalGold's MiniWallet transactions are 96 vbytes, where 0.01 sat/vbyte
+                # less rounds up to the same fee)
+                lowerfee_btc_kvb = blockmintxfee_btc_kvb - Decimal(100)/COIN
                 tx_below_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=lowerfee_btc_kvb)
                 assert_equal(tx_below_min_feerate["fee"], get_fee(tx_below_min_feerate["tx"].get_vsize(), lowerfee_btc_kvb))
             else:  # go below zero fee by using modified fees
@@ -123,6 +128,11 @@ class MiningTest(BitcoinTestFramework):
         def assert_submitblock(block, result_str_1, result_str_2=None):
             block.solve()
             result_str_2 = result_str_2 or 'duplicate-invalid'
+            if result_str_1 in ('bad-txns-duplicate', 'bad-txnmrklroot', 'time-too-new'):
+                # DigitalGold's submitblock runs CheckBlock() first and reports its failures as an error
+                for _ in range(2):
+                    assert_raises_rpc_error(-100, "Block failed CheckBlock() function", node.submitblock, hexdata=block.serialize().hex())
+                return
             assert_equal(result_str_1, node.submitblock(hexdata=block.serialize().hex()))
             assert_equal(result_str_2, node.submitblock(hexdata=block.serialize().hex()))
 
@@ -280,8 +290,9 @@ class MiningTest(BitcoinTestFramework):
         node.submitheader(hexdata=CBlockHeader(bad_block_root).serialize().hex())
         assert chain_tip(bad_block_root.hash) in node.getchaintips()
         # Should still reject invalid blocks, even if we have the header:
-        assert_equal(node.submitblock(hexdata=bad_block_root.serialize().hex()), 'bad-txnmrklroot')
-        assert_equal(node.submitblock(hexdata=bad_block_root.serialize().hex()), 'bad-txnmrklroot')
+        # (DigitalGold's submitblock reports CheckBlock() failures such as bad-txnmrklroot as an error)
+        assert_raises_rpc_error(-100, "Block failed CheckBlock() function", node.submitblock, hexdata=bad_block_root.serialize().hex())
+        assert_raises_rpc_error(-100, "Block failed CheckBlock() function", node.submitblock, hexdata=bad_block_root.serialize().hex())
         assert chain_tip(bad_block_root.hash) in node.getchaintips()
         # We know the header for this invalid block, so should just return early without error:
         node.submitheader(hexdata=CBlockHeader(bad_block_root).serialize().hex())
@@ -315,7 +326,8 @@ class MiningTest(BitcoinTestFramework):
 
         # Building a few blocks should give the same results
         self.generatetoaddress(node, 10, node.get_deterministic_priv_key().address)
-        assert_raises_rpc_error(-25, 'time-too-old', lambda: node.submitheader(hexdata=CBlockHeader(bad_block_time).serialize().hex()))
+        # (DigitalGold: the header's parent is now more than COINBASE_MATURITY blocks deep, behind the sync checkpoint)
+        assert_raises_rpc_error(-25, 'older-than-checkpoint', lambda: node.submitheader(hexdata=CBlockHeader(bad_block_time).serialize().hex()))
         assert_raises_rpc_error(-25, 'bad-prevblk', lambda: node.submitheader(hexdata=CBlockHeader(bad_block2).serialize().hex()))
         node.submitheader(hexdata=CBlockHeader(block).serialize().hex())
         node.submitheader(hexdata=CBlockHeader(bad_block_root).serialize().hex())

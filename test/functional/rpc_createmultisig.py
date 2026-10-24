@@ -143,8 +143,18 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
         balw = self.wallet.get_balance()
 
         height = node0.getblockchaininfo()["blocks"]
-        assert 150 < height < 350
-        total = 149 * 50 + (height - 149 - 100) * 25
+        assert 150 < height < 500
+        # DigitalGold: every block pays 1000 DGD here and transaction fees are burnt, so the wallets hold the
+        # mature coinbase outputs paid to them minus the fees of every transaction mined so far
+        total = 0
+        for h in range(1, height - COINBASE_MATURITY + 1):
+            block = node0.getblock(node0.getblockhash(h), 2)
+            cb_out = block['tx'][0]['vout'][0]
+            if cb_out['scriptPubKey']['hex'] == self.wallet.get_scriptPubKey().hex() or \
+                    any(n.getaddressinfo(cb_out['scriptPubKey']['address'])['ismine'] for n in (node0, node2)):
+                total += cb_out['value']
+        for h in range(1, height + 1):
+            total -= sum(tx['fee'] for tx in node0.getblock(node0.getblockhash(h), 2)['tx'][1:])
         assert bal1 == 0
         assert bal2 == self.moved
         assert_equal(bal0 + bal1 + bal2 + balw, total)
@@ -180,7 +190,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
         mredeem = msig["redeemScript"]
         assert_equal(desc, msig['descriptor'])
         if self.output_type == 'bech32':
-            assert madd[0:4] == "blrt"  # actually a bech32 address
+            assert madd[0:4] == "dgrt"  # actually a bech32 address
 
         if self.is_bdb_compiled():
             # compare against addmultisigaddress
@@ -194,7 +204,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
             wmulti.unloadwallet()
 
         spk = address_to_scriptpubkey(madd)
-        txid = self.wallet.send_to(from_node=self.nodes[0], scriptPubKey=spk, amount=1300)["txid"]
+        txid = self.wallet.send_to(from_node=self.nodes[0], scriptPubKey=spk, amount=1000000)["txid"]  # 0.01 DGD, enough for the fee below
         tx = node0.getrawtransaction(txid, True)
         vout = [v["n"] for v in tx["vout"] if madd == v["scriptPubKey"]["address"]]
         assert len(vout) == 1
@@ -205,7 +215,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
 
         self.generate(node0, 1)
 
-        outval = value - decimal.Decimal("0.00001000")
+        outval = value - decimal.Decimal("0.00050000")  # DigitalGold: 0.0001 DGD/kB minimum fee, these txs can be several kB
         rawtx = node2.createrawtransaction([{"txid": txid, "vout": vout}], [{self.final: outval}])
 
         prevtx_err = dict(prevtxs[0])

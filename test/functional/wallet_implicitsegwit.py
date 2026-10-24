@@ -21,7 +21,11 @@ def key_to_address(key, address_type):
 def send_a_to_b(receive_node, send_node):
     keys = {}
     for a in address_types:
-        a_address = receive_node.getnewaddress(address_type=a)
+        if a == 'p2sh-segwit':
+            # DigitalGold's getnewaddress refuses p2sh-segwit; a change address of that type exercises the same key handling
+            a_address = receive_node.getrawchangeaddress(address_type=a)
+        else:
+            a_address = receive_node.getnewaddress(address_type=a)
         pubkey = receive_node.getaddressinfo(a_address)['pubkey']
         keys[a] = pubkey
         for b in address_types:

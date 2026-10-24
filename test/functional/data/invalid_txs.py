@@ -284,4 +284,6 @@ DisabledOpcodeTemplates = [getDisabledOpcodeTemplate(opcode) for opcode in [
 
 def iter_all_templates():
     """Iterate through all bad transaction template types."""
-    return BadTxTemplate.__subclasses__()
+    # DigitalGold's MAX_MONEY is the largest int64, so an output above it cannot be serialized
+    skipped = (CreateTooLarge, CreateSumTooLarge)
+    return [t for t in BadTxTemplate.__subclasses__() if t not in skipped]

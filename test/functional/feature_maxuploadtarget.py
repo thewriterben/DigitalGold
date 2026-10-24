@@ -45,7 +45,7 @@ class MaxUploadTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.extra_args = [[
-            "-maxuploadtarget=800M",
+            "-maxuploadtarget=1200M",  # DigitalGold reserves 144 * 8MB a day for new blocks
             "-datacarriersize=100000",
         ]]
         self.supports_cli = False
@@ -93,13 +93,13 @@ class MaxUploadTest(BitcoinTestFramework):
         getdata_request = msg_getdata()
         getdata_request.inv.append(CInv(MSG_BLOCK, big_old_block))
 
-        max_bytes_per_day = 800*1024*1024
-        daily_buffer = 144 * 4000000
+        max_bytes_per_day = 1200*1024*1024
+        daily_buffer = 144 * 8000000
         max_bytes_available = max_bytes_per_day - daily_buffer
         success_count = max_bytes_available // old_block_size
 
-        # 576MB will be reserved for relaying new blocks, so expect this to
-        # succeed for ~235 tries.
+        # ~1099MB will be reserved for relaying new blocks, so expect this to
+        # succeed for ~110 tries.
         for i in range(success_count):
             p2p_conns[0].send_and_ping(getdata_request)
             assert_equal(p2p_conns[0].block_receive_map[big_old_block], i+1)

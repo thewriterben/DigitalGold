@@ -1139,8 +1139,9 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             return util::Error{Untranslated(STR_INTERNAL_BUG("Change adjustment: Fee needed != fee paid"))};
         }
     }
-    // Blackcoin: and if we don't pay enough fees, reduce the change
-    else if (nChangePosInOut != -1 && fee_needed > current_fee) {
+    // Blackcoin: and if we don't pay enough fees, reduce the change (unless the recipients pay the fee,
+    // which the subtractFeeFromAmount step below handles)
+    else if (nChangePosInOut != -1 && fee_needed > current_fee && !coin_selection_params.m_subtract_fee_outputs) {
         auto& change = txNew.vout.at(nChangePosInOut);
         change.nValue -= fee_needed - current_fee;
         current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);

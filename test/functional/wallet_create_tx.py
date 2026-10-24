@@ -65,6 +65,9 @@ class CreateTxWalletTest(BitcoinTestFramework):
                 "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)",
                 lambda: self.nodes[0].fundrawtransaction(hexstring=raw_tx),
             )
+            if fee_setting.startswith('-minrelaytxfee'):
+                # DigitalGold warns about a minimum relay fee above 0.01 DGD/kB
+                self.stop_node(0, expected_stderr="Warning: -minrelaytxfee is set very high! The wallet will avoid paying less than the minimum relay fee.")
 
         self.log.info('Check maxtxfee in combination with settxfee')
         self.restart_node(0)

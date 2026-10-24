@@ -17,7 +17,6 @@ from decimal import Decimal
 from itertools import product
 
 from test_framework.messages import (
-    MAX_BIP125_RBF_SEQUENCE,
     COIN,
     CTransaction,
     CTxOut,
@@ -32,7 +31,6 @@ from test_framework.script import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-    assert_greater_than,
     assert_raises_rpc_error,
 )
 from test_framework.wallet import (
@@ -71,7 +69,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.extra_args = [
             ["-txindex"],
             ["-txindex"],
-            ["-fastprune", "-prune=1"],
+            [],  # DigitalGold has no -prune / -fastprune
         ]
         # whitelist all peers to speed up tx relay / mempool sync
         for args in self.extra_args:
@@ -245,13 +243,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         coin_base = self.nodes[1].getblock(block1)['tx'][0]
         gottx = self.nodes[1].getrawtransaction(txid=coin_base, verbosity=2, blockhash=block1)
         assert 'fee' not in gottx
-        # check that verbosity 2 for a mempool tx will fallback to verbosity 1
-        # Do this with a pruned chain, as a regression test for https://github.com/bitcoin/bitcoin/pull/29003
-        self.generate(self.nodes[2], 400)
-        assert_greater_than(self.nodes[2].pruneblockchain(250), 0)
-        mempool_tx = self.wallet.send_self_transfer(from_node=self.nodes[2])['txid']
-        gottx = self.nodes[2].getrawtransaction(txid=mempool_tx, verbosity=2)
-        assert 'fee' not in gottx
+        # (the pruned-chain regression test for verbosity 2 is omitted: DigitalGold has no block pruning)
 
     def createrawtransaction_tests(self):
         self.log.info("Test createrawtransaction")
@@ -304,17 +296,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "Invalid parameter, key-value pair must contain exactly one key", self.nodes[0].createrawtransaction, [], [{'a': 1, 'b': 2}])
         assert_raises_rpc_error(-8, "Invalid parameter, key-value pair not an object as expected", self.nodes[0].createrawtransaction, [], [['key-value pair1'], ['2']])
 
-        # Test `createrawtransaction` mismatch between sequence number(s) and `replaceable` option
-        assert_raises_rpc_error(-8, "Invalid parameter combination: Sequence number(s) contradict replaceable option",
-                                self.nodes[0].createrawtransaction, [{'txid': TXID, 'vout': 0, 'sequence': MAX_BIP125_RBF_SEQUENCE+1}], {}, 0, True)
+        # (DigitalGold's createrawtransaction has no `replaceable` option)
 
         # Test `createrawtransaction` invalid `locktime`
         assert_raises_rpc_error(-3, "JSON value of type string is not of expected type number", self.nodes[0].createrawtransaction, [], {}, 'foo')
         assert_raises_rpc_error(-8, "Invalid parameter, locktime out of range", self.nodes[0].createrawtransaction, [], {}, -1)
         assert_raises_rpc_error(-8, "Invalid parameter, locktime out of range", self.nodes[0].createrawtransaction, [], {}, 4294967296)
-
-        # Test `createrawtransaction` invalid `replaceable`
-        assert_raises_rpc_error(-3, "JSON value of type string is not of expected type bool", self.nodes[0].createrawtransaction, [], {}, 0, 'foo')
 
         # Test that createrawtransaction accepts an array and object as outputs
         # One output
@@ -549,7 +536,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         rawTx = self.nodes[0].decoderawtransaction(rawTxSigned['hex'])
         self.sync_all()
         self.generate(self.nodes[0], 1)
-        assert_equal(self.nodes[0].getbalance(), bal + Decimal('50.00000000') + Decimal('2.19000000'))  # block reward + tx
+        assert_equal(self.nodes[0].getbalance(), bal + Decimal('2.19000000'))  # tx (node 0's block rewards are all mature already)
 
         # 2of2 test for combining transactions
         bal = self.nodes[2].getbalance()
@@ -592,7 +579,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         rawTx2 = self.nodes[0].decoderawtransaction(rawTxComb)
         self.sync_all()
         self.generate(self.nodes[0], 1)
-        assert_equal(self.nodes[0].getbalance(), bal + Decimal('50.00000000') + Decimal('2.19000000'))  # block reward + tx
+        assert_equal(self.nodes[0].getbalance(), bal + Decimal('2.19000000'))  # tx (node 0's block rewards are all mature already)
 
 
 if __name__ == '__main__':

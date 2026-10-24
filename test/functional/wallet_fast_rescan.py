@@ -55,6 +55,8 @@ class WalletFastRescanTest(BitcoinTestFramework):
         for i in range(NUM_BLOCKS):
             self.log.info(f"Block {i+1}/{NUM_BLOCKS}")
             for desc_info in w.listdescriptors()['descriptors']:
+                if desc_info['desc'].startswith('tr('):
+                    continue  # Taproot is not active on DigitalGold's regtest
                 if 'range' in desc_info:
                     start_range, end_range = desc_info['range']
                     addr = w.deriveaddresses(desc_info['desc'], [end_range, end_range])[0]
@@ -92,10 +94,11 @@ class WalletFastRescanTest(BitcoinTestFramework):
         txids_slow_nonactive = self.get_wallet_txids(node, 'rescan_slow_nonactive')
 
         self.log.info("Verify that all rescans found the same txs in slow and fast variants")
-        assert_equal(len(txids_slow), NUM_DESCRIPTORS * NUM_BLOCKS)
-        assert_equal(len(txids_fast), NUM_DESCRIPTORS * NUM_BLOCKS)
-        assert_equal(len(txids_slow_nonactive), NUM_DESCRIPTORS * NUM_BLOCKS)
-        assert_equal(len(txids_fast_nonactive), NUM_DESCRIPTORS * NUM_BLOCKS)
+        num_funded = NUM_DESCRIPTORS - 2  # the two tr() descriptors receive nothing
+        assert_equal(len(txids_slow), num_funded * NUM_BLOCKS)
+        assert_equal(len(txids_fast), num_funded * NUM_BLOCKS)
+        assert_equal(len(txids_slow_nonactive), num_funded * NUM_BLOCKS)
+        assert_equal(len(txids_fast_nonactive), num_funded * NUM_BLOCKS)
         assert_equal(sorted(txids_slow), sorted(txids_fast))
         assert_equal(sorted(txids_slow_nonactive), sorted(txids_fast_nonactive))
 

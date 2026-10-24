@@ -531,7 +531,7 @@ RPCHelpMan sendtoaddress()
 
     CCoinControl coin_control;
 
-    coin_control.m_avoid_address_reuse = GetAvoidReuseFlag(*pwallet, request.params[8]);
+    coin_control.m_avoid_address_reuse = GetAvoidReuseFlag(*pwallet, request.params[5]);
     // We also enable partial spend avoidance if reuse avoidance is set.
     coin_control.m_avoid_partial_spends |= coin_control.m_avoid_address_reuse;
 
@@ -547,7 +547,7 @@ RPCHelpMan sendtoaddress()
 
     std::vector<CRecipient> recipients;
     ParseRecipients(address_amounts, subtractFeeFromAmount, recipients);
-    const bool verbose{request.params[10].isNull() ? false : request.params[10].get_bool()};
+    const bool verbose{request.params[7].isNull() ? false : request.params[7].get_bool()};
 
     return SendMoney(*pwallet, coin_control, recipients, mapValue, verbose);
 },
@@ -634,7 +634,7 @@ RPCHelpMan sendmany()
 
     std::vector<CRecipient> recipients;
     ParseRecipients(sendTo, subtractFeeFromAmount, recipients);
-    const bool verbose{request.params[9].isNull() ? false : request.params[9].get_bool()};
+    const bool verbose{request.params[6].isNull() ? false : request.params[6].get_bool()};
 
     return SendMoney(*pwallet, coin_control, recipients, std::move(mapValue), verbose);
 },
@@ -735,6 +735,8 @@ void FundTransaction(CWallet& wallet, CMutableTransaction& tx, CAmount& fee_out,
             {
                 {"add_inputs", UniValueType(UniValue::VBOOL)},
                 {"include_unsafe", UniValueType(UniValue::VBOOL)},
+                {"minconf", UniValueType(UniValue::VNUM)},
+                {"maxconf", UniValueType(UniValue::VNUM)},
                 {"add_to_wallet", UniValueType(UniValue::VBOOL)},
                 {"changeAddress", UniValueType(UniValue::VSTR)},
                 {"change_address", UniValueType(UniValue::VSTR)},
@@ -756,6 +758,20 @@ void FundTransaction(CWallet& wallet, CMutableTransaction& tx, CAmount& fee_out,
                 {"input_weights", UniValueType(UniValue::VARR)},
             },
             true, true);
+
+        if (options.exists("minconf")) {
+            coinControl.m_min_depth = options["minconf"].getInt<int>();
+            if (coinControl.m_min_depth < 0) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative minconf");
+            }
+        }
+
+        if (options.exists("maxconf")) {
+            coinControl.m_max_depth = options["maxconf"].getInt<int>();
+            if (coinControl.m_max_depth < coinControl.m_min_depth) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("maxconf can't be lower than minconf: %d < %d", coinControl.m_max_depth, coinControl.m_min_depth));
+            }
+        }
 
         if (options.exists("add_inputs")) {
             coinControl.m_allow_other_inputs = options["add_inputs"].get_bool();
@@ -1252,7 +1268,7 @@ RPCHelpMan send()
             std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
             if (!pwallet) return UniValue::VNULL;
 
-            UniValue options{request.params[4].isNull() ? UniValue::VOBJ : request.params[4]};
+            UniValue options{request.params[1].isNull() ? UniValue::VOBJ : request.params[1]};
             PreventOutdatedOptions(options);
 
 
@@ -1351,7 +1367,7 @@ RPCHelpMan sendall()
             // the user could have gotten from another RPC command prior to now
             pwallet->BlockUntilSyncedToCurrentChain();
 
-            UniValue options{request.params[4].isNull() ? UniValue::VOBJ : request.params[4]};
+            UniValue options{request.params[1].isNull() ? UniValue::VOBJ : request.params[1]};
             PreventOutdatedOptions(options);
 
 

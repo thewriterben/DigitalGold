@@ -14,7 +14,7 @@ from typing import (
 )
 from test_framework.address import (
     address_to_scriptpubkey,
-    create_deterministic_address_bcrt1_p2tr_op_true,
+    ADDRESS_BCRT1_P2WSH_OP_TRUE,
     key_to_p2pkh,
     key_to_p2sh_p2wpkh,
     key_to_p2wpkh,
@@ -36,7 +36,6 @@ from test_framework.messages import (
 )
 from test_framework.script import (
     CScript,
-    LEAF_VERSION_TAPSCRIPT,
     OP_NOP,
     OP_RETURN,
     OP_TRUE,
@@ -55,14 +54,16 @@ from test_framework.util import (
 )
 from test_framework.wallet_util import generate_keypair
 
-DEFAULT_FEE = Decimal("0.0001")
+DEFAULT_FEE = Decimal("0.001")  # DigitalGold: 0.0001 DGD/kB would be below the 1000 satoshi minimum fee of small txs
 
 class MiniWalletMode(Enum):
     """Determines the transaction type the MiniWallet is creating and spending.
 
     For most purposes, the default mode ADDRESS_OP_TRUE should be sufficient;
-    it simply uses a fixed bech32m P2TR address whose coins are spent with a
+    it simply uses a fixed bech32 P2WSH address whose coins are spent with a
     witness stack of OP_TRUE, i.e. following an anyone-can-spend policy.
+    (DigitalGold: Taproot is not active on regtest, so unlike Bitcoin Core the
+    anyone-can-spend output is a P2WSH script rather than a P2TR script path.)
     However, if the transactions need to be modified by the user (e.g. prepending
     scriptSig for testing opcodes that are activated by a soft-fork), or the txs
     should contain an actual signature, the raw modes RAW_OP_TRUE and RAW_P2PK
@@ -71,7 +72,7 @@ class MiniWalletMode(Enum):
                     |      output       |           |  tx is   | can modify |  needs
          mode       |    description    |  address  | standard | scriptSig  | signing
     ----------------+-------------------+-----------+----------+------------+----------
-    ADDRESS_OP_TRUE | anyone-can-spend  |  bech32m  |   yes    |    no      |   no
+    ADDRESS_OP_TRUE | anyone-can-spend  |  bech32   |   yes    |    no      |   no
     RAW_OP_TRUE     | anyone-can-spend  |  - (raw)  |   no     |    yes     |   no
     RAW_P2PK        | pay-to-public-key |  - (raw)  |   yes    |    yes     |   yes
     """
@@ -96,7 +97,7 @@ class MiniWallet:
             pub_key = self._priv_key.get_pubkey()
             self._scriptPubKey = key_to_p2pk_script(pub_key.get_bytes())
         elif mode == MiniWalletMode.ADDRESS_OP_TRUE:
-            self._address, self._internal_key = create_deterministic_address_bcrt1_p2tr_op_true()
+            self._address = ADDRESS_BCRT1_P2WSH_OP_TRUE
             self._scriptPubKey = address_to_scriptpubkey(self._address)
 
         # When the pre-mined test framework chain is used, it contains coinbase
@@ -181,7 +182,7 @@ class MiniWallet:
         elif self._mode == MiniWalletMode.ADDRESS_OP_TRUE:
             tx.wit.vtxinwit = [CTxInWitness()] * len(tx.vin)
             for i in tx.wit.vtxinwit:
-                i.scriptWitness.stack = [CScript([OP_TRUE]), bytes([LEAF_VERSION_TAPSCRIPT]) + self._internal_key]
+                i.scriptWitness.stack = [CScript([OP_TRUE])]
         else:
             assert False
 
@@ -252,7 +253,7 @@ class MiniWallet:
         self.sendrawtransaction(from_node=from_node, tx_hex=tx['hex'])
         return tx
 
-    def send_to(self, *, from_node, scriptPubKey, amount, fee=1000):
+    def send_to(self, *, from_node, scriptPubKey, amount, fee=2000):  # DigitalGold: 2000 sat keeps the tx above the 10 sat/vB fee filter
         """
         Create and send a tx with an output to a given scriptPubKey/amount,
         plus a change output to our internal address. To keep things simple, a
@@ -289,7 +290,7 @@ class MiniWallet:
         amount_per_output=0,
         locktime=0,
         sequence=0,
-        fee_per_output=1000,
+        fee_per_output=None,
         target_weight=0,
         confirmed_only=False
     ):
@@ -304,6 +305,12 @@ class MiniWallet:
 
         # calculate output amount
         inputs_value_total = sum([int(COIN * utxo['value']) for utxo in utxos_to_spend])
+        if fee_per_output is None:
+            # DigitalGold: the consensus minimum fee is 1000 sat up to 200 bytes and 10 sat/vB
+            # above that, and peers do not announce transactions below 10 sat/vB, so size the
+            # default fee for the transaction being built (plus some slack for signatures)
+            est_vsize = 11 + 70 * len(utxos_to_spend) + 43 * num_outputs
+            fee_per_output = max(1000, (10 * est_vsize + 100 + num_outputs - 1) // num_outputs)
         outputs_value_total = inputs_value_total - fee_per_output * num_outputs
         amount_per_output = amount_per_output or (outputs_value_total // num_outputs)
         assert amount_per_output > 0
@@ -352,12 +359,17 @@ class MiniWallet:
         assert fee_rate >= 0
         assert fee >= 0
         # calculate fee
-        if self._mode in (MiniWalletMode.RAW_OP_TRUE, MiniWalletMode.ADDRESS_OP_TRUE):
+        if self._mode == MiniWalletMode.RAW_OP_TRUE:
             vsize = Decimal(104)  # anyone-can-spend
+        elif self._mode == MiniWalletMode.ADDRESS_OP_TRUE:
+            vsize = Decimal(96)  # anyone-can-spend P2WSH (one-byte witness script, no control block)
         elif self._mode == MiniWalletMode.RAW_P2PK:
             vsize = Decimal(168)  # P2PK (73 bytes scriptSig + 35 bytes scriptPubKey + 60 bytes other)
         else:
             assert False
+        if target_weight:
+            # DigitalGold: a bulked transaction has to pay the minimum fee for its final size
+            vsize = Decimal(target_weight // 4 + 4)
         send_value = utxo_to_spend["value"] - (fee or (fee_rate * vsize / 1000))
 
         # create tx

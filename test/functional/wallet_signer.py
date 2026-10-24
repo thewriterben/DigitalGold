@@ -13,7 +13,6 @@ import platform
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-    assert_greater_than,
     assert_raises_rpc_error,
 )
 
@@ -102,18 +101,14 @@ class WalletSignerTest(BitcoinTestFramework):
         assert_equal(hww.getwalletinfo()["keypoolsize"], 40)
 
         address1 = hww.getnewaddress(address_type="bech32")
-        assert_equal(address1, "bcrt1qm90ugl4d48jv8n6e5t9ln6t9zlpm5th68x4f8g")
+        assert_equal(address1, "dgrt1qm90ugl4d48jv8n6e5t9ln6t9zlpm5th67gryw4")
         address_info = hww.getaddressinfo(address1)
         assert_equal(address_info['solvable'], True)
         assert_equal(address_info['ismine'], True)
         assert_equal(address_info['hdkeypath'], "m/84h/1h/0h/0/0")
 
-        address2 = hww.getnewaddress(address_type="p2sh-segwit")
-        assert_equal(address2, "2N2gQKzjUe47gM8p1JZxaAkTcoHPXV6YyVp")
-        address_info = hww.getaddressinfo(address2)
-        assert_equal(address_info['solvable'], True)
-        assert_equal(address_info['ismine'], True)
-        assert_equal(address_info['hdkeypath'], "m/49h/1h/0h/0/0")
+        # (DigitalGold's wallet refuses p2sh-segwit addresses)
+        assert_raises_rpc_error(-8, "P2SH_SEGWIT addresses are not welcome", hww.getnewaddress, address_type="p2sh-segwit")
 
         address3 = hww.getnewaddress(address_type="legacy")
         assert_equal(address3, "n1LKejAadN6hg2FrBXoU1KrwX4uK16mco9")
@@ -122,12 +117,9 @@ class WalletSignerTest(BitcoinTestFramework):
         assert_equal(address_info['ismine'], True)
         assert_equal(address_info['hdkeypath'], "m/44h/1h/0h/0/0")
 
-        address4 = hww.getnewaddress(address_type="bech32m")
-        assert_equal(address4, "bcrt1phw4cgpt6cd30kz9k4wkpwm872cdvhss29jga2xpmftelhqll62ms4e9sqj")
-        address_info = hww.getaddressinfo(address4)
-        assert_equal(address_info['solvable'], True)
-        assert_equal(address_info['ismine'], True)
-        assert_equal(address_info['hdkeypath'], "m/86h/1h/0h/0/0")
+        # (Taproot is not active on DigitalGold's regtest)
+        assert_raises_rpc_error(-8, "Taproot addresses (bech32m) are not supported yet", hww.getnewaddress, address_type="bech32m")
+        address4 = address1
 
         self.log.info('Test walletdisplayaddress')
         result = hww.walletdisplayaddress(address1)
@@ -150,14 +142,14 @@ class WalletSignerTest(BitcoinTestFramework):
         assert mock_wallet.getwalletinfo()['private_keys_enabled']
 
         result = mock_wallet.importdescriptors([{
-            "desc": "tr([00000001/86h/1h/0']tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK/0/*)#7ew68cn8",
+            "desc": "wpkh([00000001/84h/1h/0']tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK/0/*)#j9ujsn8d",
             "timestamp": 0,
             "range": [0,1],
             "internal": False,
             "active": True
         },
         {
-            "desc": "tr([00000001/86h/1h/0']tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK/1/*)#0dtm6drl",
+            "desc": "wpkh([00000001/84h/1h/0']tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK/1/*)#r3endxh4",
             "timestamp": 0,
             "range": [0, 0],
             "internal": True,
@@ -167,7 +159,7 @@ class WalletSignerTest(BitcoinTestFramework):
         assert_equal(result[1], {'success': True})
         assert_equal(mock_wallet.getwalletinfo()["txcount"], 1)
         dest = self.nodes[0].getnewaddress(address_type='bech32')
-        mock_psbt = mock_wallet.walletcreatefundedpsbt([], {dest:0.5}, 0, {'replaceable': True}, True)['psbt']
+        mock_psbt = mock_wallet.walletcreatefundedpsbt([], {dest:0.5}, 0, {}, True)['psbt']
         mock_psbt_signed = mock_wallet.walletprocesspsbt(psbt=mock_psbt, sign=True, sighashtype="ALL", bip32derivs=True)
         mock_tx = mock_psbt_signed["hex"]
         assert mock_wallet.testmempoolaccept([mock_tx])[0]["allowed"]
@@ -216,25 +208,8 @@ class WalletSignerTest(BitcoinTestFramework):
         res = hww.sendall(recipients=[{dest:0.5}, hww.getrawchangeaddress()], add_to_wallet=False)
         assert res["complete"]
         assert_equal(res["hex"], mock_tx)
-        # Broadcast transaction so we can bump the fee
         hww.sendrawtransaction(res["hex"])
-
-        self.log.info('Prepare fee bumped mock PSBT')
-
-        # Now that the transaction is broadcast, bump fee in mock wallet:
-        orig_tx_id = res["txid"]
-        mock_psbt_bumped = mock_wallet.psbtbumpfee(orig_tx_id)["psbt"]
-        mock_psbt_bumped_signed = mock_wallet.walletprocesspsbt(psbt=mock_psbt_bumped, sign=True, sighashtype="ALL", bip32derivs=True)
-
-        with open(os.path.join(self.nodes[1].cwd, "mock_psbt"), "w", encoding="utf8") as f:
-            f.write(mock_psbt_bumped_signed["psbt"])
-
-        self.log.info('Test bumpfee using hww1')
-
-        # Bump fee
-        res = hww.bumpfee(orig_tx_id)
-        assert_greater_than(res["fee"], res["origfee"])
-        assert_equal(res["errors"], [])
+        # (DigitalGold has no replace-by-fee, so there is no bumpfee to test)
 
         # # Handle error thrown by script
         # self.set_mock_result(self.nodes[4], "2")

@@ -71,13 +71,13 @@ class AbandonConflictTest(BitcoinTestFramework):
         inputs.append({"txid": txB, "vout": nB})
         outputs = {}
 
-        outputs[alice.getnewaddress()] = Decimal("14.99998")
+        outputs[alice.getnewaddress()] = Decimal("14.9999")
         outputs[bob.getnewaddress()] = Decimal("5")
         signed = alice.signrawtransactionwithwallet(alice.createrawtransaction(inputs, outputs))
         txAB1 = self.nodes[0].sendrawtransaction(signed["hex"])
 
         # Identify the 14.99998btc output
-        nAB = next(tx_out["vout"] for tx_out in alice.gettransaction(txAB1)["details"] if tx_out["amount"] == Decimal("14.99998"))
+        nAB = next(tx_out["vout"] for tx_out in alice.gettransaction(txAB1)["details"] if tx_out["amount"] == Decimal("14.9999"))
 
         #Create a child tx spending AB1 and C
         inputs = []
@@ -103,7 +103,7 @@ class AbandonConflictTest(BitcoinTestFramework):
 
         # Restart the node with a higher min relay fee so the parent tx is no longer in mempool
         # TODO: redo with eviction
-        self.restart_node(0, extra_args=["-minrelaytxfee=0.0001"])
+        self.restart_node(0, extra_args=["-minrelaytxfee=0.001"])
         alice = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
         assert self.nodes[0].getmempoolinfo()['loaded']
 
@@ -151,17 +151,17 @@ class AbandonConflictTest(BitcoinTestFramework):
         # But its child tx remains abandoned
         self.nodes[0].sendrawtransaction(signed["hex"])
         newbalance = alice.getbalance()
-        assert_equal(newbalance, balance - Decimal("20") + Decimal("14.99998"))
+        assert_equal(newbalance, balance - Decimal("20") + Decimal("14.9999"))
         balance = newbalance
 
         # Send child tx again so it is unabandoned
         self.nodes[0].sendrawtransaction(signed2["hex"])
         newbalance = alice.getbalance()
-        assert_equal(newbalance, balance - Decimal("10") - Decimal("14.99998") + Decimal("24.9996"))
+        assert_equal(newbalance, balance - Decimal("10") - Decimal("14.9999") + Decimal("24.9996"))
         balance = newbalance
 
         # Remove using high relay fee again
-        self.restart_node(0, extra_args=["-minrelaytxfee=0.0001"])
+        self.restart_node(0, extra_args=["-minrelaytxfee=0.001"])
         alice = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
         assert self.nodes[0].getmempoolinfo()['loaded']
         assert_equal(len(self.nodes[0].getrawmempool()), 0)

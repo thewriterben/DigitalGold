@@ -107,6 +107,7 @@ class HelpRpcTest(BitcoinTestFramework):
 
         if self.is_wallet_compiled():
             components.append('Wallet')
+            components.append('Staking')  # DigitalGold
 
         if self.is_external_signer_compiled():
             components.append('Signer')

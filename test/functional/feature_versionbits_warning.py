@@ -15,8 +15,8 @@ from test_framework.messages import msg_block
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 
-VB_PERIOD = 144           # versionbits period length for regtest
-VB_THRESHOLD = 108        # versionbits activation threshold for regtest
+VB_PERIOD = 150           # versionbits period length for DigitalGold regtest
+VB_THRESHOLD = 120        # versionbits activation threshold for DigitalGold regtest
 VB_TOP_BITS = 0x20000000
 VB_UNKNOWN_BIT = 27       # Choose a bit unassigned to any deployment
 VB_UNKNOWN_VERSION = VB_TOP_BITS | (1 << VB_UNKNOWN_BIT)
