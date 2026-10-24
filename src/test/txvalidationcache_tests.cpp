@@ -225,8 +225,18 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
         ValidateCheckInputsForAllFlags(CTransaction(spend_tx), SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_STRICTENC, false, m_node.chainman->ActiveChainstate().CoinsTip());
     }
 
-    // And if we produce a block with this tx, it should be valid (DERSIG not
-    // enabled yet), even though there's no cache entry.
+    // And if we produce a block with this tx, it should be valid even though there's no cache
+    // entry. DigitalGold: DERSIG is enforced by consensus in every block (GetBlockScriptFlags()),
+    // so the mined block must carry the strictly encoded signature; the non-DER variant above
+    // only served the CheckInputScripts() checks. The spends below refer to spend_tx, so
+    // re-sign it in place.
+    {
+        std::vector<unsigned char> vchSig;
+        uint256 hash = SignatureHash(p2pk_scriptPubKey, spend_tx, 0, SIGHASH_ALL, 0, SigVersion::BASE);
+        BOOST_CHECK(coinbaseKey.Sign(hash, vchSig));
+        vchSig.push_back((unsigned char)SIGHASH_ALL);
+        spend_tx.vin[0].scriptSig = CScript() << vchSig;
+    }
     CBlock block;
 
     block = CreateAndProcessBlock({spend_tx}, p2pk_scriptPubKey);

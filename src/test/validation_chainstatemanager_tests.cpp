@@ -57,7 +57,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
 
     // Get to a valid assumeutxo tip (per chainparams);
     mineBlocks(10);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 250);
     auto active_tip = WITH_LOCK(manager.GetMutex(), return manager.ActiveTip());
     auto exp_tip = c1.m_chain.Tip();
     BOOST_CHECK_EQUAL(active_tip, exp_tip);
@@ -92,10 +92,10 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     auto& active_chain2 = WITH_LOCK(manager.GetMutex(), return manager.ActiveChain());
     BOOST_CHECK_EQUAL(&active_chain2, &c2.m_chain);
 
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 250);
     mineBlocks(1);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 111);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return c1.m_chain.Height()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 251);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return c1.m_chain.Height()), 250);
 
     auto active_tip2 = WITH_LOCK(manager.GetMutex(), return manager.ActiveTip());
     BOOST_CHECK_EQUAL(active_tip, active_tip2->pprev);
@@ -188,7 +188,7 @@ struct SnapshotTestSetup : TestChain100Setup {
         }
 
         size_t initial_size;
-        size_t initial_total_coins{100};
+        size_t initial_total_coins{240}; // DigitalGold: TestChain100Setup mines 240 blocks
 
         // Make some initial assertions about the contents of the chainstate.
         {
@@ -214,9 +214,9 @@ struct SnapshotTestSetup : TestChain100Setup {
         BOOST_CHECK(!chainman.ActiveChainstate().m_from_snapshot_blockhash);
         BOOST_CHECK(!chainman.SnapshotBlockhash());
 
-        // Mine 10 more blocks, putting at us height 110 where a valid assumeutxo value can
-        // be found.
-        constexpr int snapshot_height = 110;
+        // Mine 10 more blocks, putting at us height 250 where a valid assumeutxo value can
+        // be found (DigitalGold's fixture starts at 240).
+        constexpr int snapshot_height = 250;
         mineBlocks(10);
         initial_size += 10;
         initial_total_coins += 10;
@@ -426,17 +426,17 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // Blocks in range [assumed_valid_start_idx, last_assumed_valid_idx) will be
     // marked as assumed-valid and not having data.
     const int expected_assumed_valid{20};
-    const int last_assumed_valid_idx{111};
+    const int last_assumed_valid_idx{251};
     const int assumed_valid_start_idx = last_assumed_valid_idx - expected_assumed_valid;
 
-    // Mine to height 120, past the hardcoded regtest assumeutxo snapshot at
-    // height 110
+    // Mine to height 260, past the hardcoded regtest assumeutxo snapshot at
+    // height 260 (DigitalGold: the fixture mines 240 blocks)
     mineBlocks(20);
 
     CBlockIndex* validated_tip{nullptr};
     CBlockIndex* assumed_base{nullptr};
     CBlockIndex* assumed_tip{WITH_LOCK(chainman.GetMutex(), return chainman.ActiveChain().Tip())};
-    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 120);
+    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 260);
 
     auto reload_all_block_indexes = [&]() {
         // For completeness, we also reset the block sequence counters to
@@ -462,7 +462,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
         LOCK(::cs_main);
         auto index = cs1.m_chain[i];
 
-        // Blocks with heights in range [91, 110] are marked ASSUMED_VALID
+        // Blocks with heights in range [231, 250] are marked ASSUMED_VALID
         if (i < last_assumed_valid_idx && i >= assumed_valid_start_idx) {
             index->nStatus = BlockStatus::BLOCK_VALID_TREE | BlockStatus::BLOCK_ASSUMED_VALID;
         }
@@ -497,17 +497,17 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     cs2.m_chain.SetTip(*assumed_base);
 
     // Sanity check test variables.
-    BOOST_CHECK_EQUAL(num_indexes, 121); // 121 total blocks, including genesis
-    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 120);  // original chain has height 120
-    BOOST_CHECK_EQUAL(validated_tip->nHeight, 90); // current cs1 chain has height 90
-    BOOST_CHECK_EQUAL(assumed_base->nHeight, 110); // current cs2 chain has height 110
+    BOOST_CHECK_EQUAL(num_indexes, 261); // 261 total blocks, including genesis
+    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 260);  // original chain has height 260
+    BOOST_CHECK_EQUAL(validated_tip->nHeight, 230); // current cs1 chain has height 90
+    BOOST_CHECK_EQUAL(assumed_base->nHeight, 250); // current cs2 chain has height 250
 
     // Regenerate cs1.setBlockIndexCandidates and cs2.setBlockIndexCandidate and
     // check contents below.
     reload_all_block_indexes();
 
     // The fully validated chain should only have the current validated tip and
-    // the assumed valid base as candidates, blocks 90 and 110. Specifically:
+    // the assumed valid base as candidates, blocks 230 and 250. Specifically:
     //
     // - It does not have blocks 0-89 because they contain less work than the
     //   chain tip.
@@ -515,15 +515,15 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // - It has block 90 because it has data and equal work to the chain tip,
     //   (since it is the chain tip).
     //
-    // - It does not have blocks 91-109 because they do not contain data.
+    // - It does not have blocks 231-249 because they do not contain data.
     //
-    // - It has block 110 even though it does not have data, because
+    // - It has block 250 even though it does not have data, because
     //   LoadBlockIndex has a special case to always add the snapshot block as a
     //   candidate. The special case is only actually intended to apply to the
     //   snapshot chainstate cs2, not the background chainstate cs1, but it is
     //   written broadly and applies to both.
     //
-    // - It does not have any blocks after height 110 because cs1 is a background
+    // - It does not have any blocks after height 250 because cs1 is a background
     //   chainstate, and only blocks where are ancestors of the snapshot block
     //   are added as candidates for the background chainstate.
     BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 2);
@@ -535,21 +535,21 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // HAVE_DATA) blocks as candidates.
     //
     // Specifically:
-    // - All blocks below height 110 are not candidates, because cs2 chain tip
-    //   has height 110 and they have less work than it does.
+    // - All blocks below height 250 are not candidates, because cs2 chain tip
+    //   has height 250 and they have less work than it does.
     //
-    // - Block 110 is a candidate even though it does not have data, because it
+    // - Block 250 is a candidate even though it does not have data, because it
     //   is the snapshot block, which is assumed valid.
     //
-    // - Blocks 111-120 are added because they have data.
+    // - Blocks 251-260 are added because they have data.
 
     // Check that block 90 is absent
     BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(validated_tip), 0);
-    // Check that block 109 is absent
+    // Check that block 249 is absent
     BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base->pprev), 0);
-    // Check that block 110 is present
+    // Check that block 250 is present
     BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base), 1);
-    // Check that block 120 is present
+    // Check that block 260 is present
     BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_tip), 1);
     // Check that 11 blocks total are present.
     BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.size(), num_indexes - last_assumed_valid_idx + 1);
@@ -586,7 +586,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
         BOOST_CHECK(bg_chainstate.DisconnectTip(unused_state, &unused_pool));
         unused_pool.clear();  // to avoid queuedTx assertion errors on teardown
     }
-    BOOST_CHECK_EQUAL(bg_chainstate.m_chain.Height(), 109);
+    BOOST_CHECK_EQUAL(bg_chainstate.m_chain.Height(), 249);
 
     // Test that simulating a shutdown (resetting ChainstateManager) and then performing
     // chainstate reinitializing successfully cleans up the background-validation
@@ -605,7 +605,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
         BOOST_CHECK(!chainman_restarted.IsSnapshotValidated());
 
         BOOST_CHECK_EQUAL(chainman_restarted.ActiveTip()->GetBlockHash(), snapshot_tip_hash);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 350);
     }
 
     BOOST_TEST_MESSAGE(
@@ -613,13 +613,13 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
     mineBlocks(10);
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 360);
 
         // Background chainstate should be unaware of new blocks on the snapshot
         // chainstate.
         for (Chainstate* cs : chainman_restarted.GetAll()) {
             if (cs != &chainman_restarted.ActiveChainstate()) {
-                BOOST_CHECK_EQUAL(cs->m_chain.Height(), 109);
+                BOOST_CHECK_EQUAL(cs->m_chain.Height(), 249);
             }
         }
     }
@@ -696,7 +696,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
         BOOST_CHECK(active_cs2.m_coinsdb_cache_size_bytes > db_cache_before_complete);
 
         BOOST_CHECK_EQUAL(chainman_restarted.ActiveTip()->GetBlockHash(), snapshot_tip_hash);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 350);
     }
 
     BOOST_TEST_MESSAGE(
@@ -704,7 +704,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
     mineBlocks(10);
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 360);
     }
 }
 
@@ -763,7 +763,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
         BOOST_CHECK_EQUAL(chainman_restarted.GetAll().size(), 1);
         BOOST_CHECK(!chainman_restarted.IsSnapshotActive());
         BOOST_CHECK(!chainman_restarted.IsSnapshotValidated());
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 350);
     }
 
     BOOST_TEST_MESSAGE(
@@ -771,7 +771,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
     mineBlocks(10);
     {
         LOCK(::cs_main);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 360);
     }
 }
 

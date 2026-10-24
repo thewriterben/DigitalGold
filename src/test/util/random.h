@@ -69,9 +69,12 @@ static inline bool InsecureRandBool()
 
 static inline CAmount InsecureRandMoneyAmount()
 {
-    // Widen before adding: MAX_MONEY + 1 overflows CAmount in this project
-    // (MSVC reports C4307 and the build treats warnings as errors).
-    return static_cast<CAmount>(InsecureRandRange(static_cast<uint64_t>(MAX_MONEY) + 1));
+    // DigitalGold's MAX_MONEY spans the whole int64 range, but CompressAmount() (used by the
+    // coins database) only round-trips amounts below 2^64 / 9, so keep random amounts within
+    // the range the code can actually store. (This also avoids MAX_MONEY + 1 overflowing
+    // CAmount, which MSVC reports as C4307.)
+    static constexpr CAmount MAX_COMPRESSIBLE_AMOUNT{2'000'000'000'000'000'000};
+    return static_cast<CAmount>(InsecureRandRange(static_cast<uint64_t>(MAX_COMPRESSIBLE_AMOUNT) + 1));
 }
 
 #endif // BITCOIN_TEST_UTIL_RANDOM_H

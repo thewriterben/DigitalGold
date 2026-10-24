@@ -521,17 +521,13 @@ public:
 
         m_assumeutxo_data = {
             {
-                //.height = 110,
-                //.hash_serialized = AssumeutxoHash{uint256S("0x6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1")},
-                //.nChainTx = 111,
-                //.blockhash = uint256S("0x696e92821f65549c7ee134edceeeeaaa4105647a3c4fd9f298c0aec0ab50425c")
-            },
-            {
-                // For use by test/functional/feature_assumeutxo.py
-                //.height = 299,
-                //.hash_serialized = AssumeutxoHash{uint256S("0x61d9c2b29a2571a5fe285fe2d8554f91f93309666fc9b8223ee96338de25ff53")},
-                //.nChainTx = 300,
-                //.blockhash = uint256S("0x7e0517ef3ea6ecbed9117858e42eedc8eb39e8698a38dcbd1b3962a283233f4c")
+                // Used by the unit tests: TestChain100Setup mines 240 deterministic blocks and
+                // the chainstate manager tests take their snapshot ten blocks later. Regenerate
+                // (CreateUTXOSnapshot's txoutset_hash / base_hash / nchaintx) if that fixture changes.
+                .height = 250,
+                .hash_serialized = AssumeutxoHash{uint256S("0x17576da8dd8e776974083c4daba13d048007ddd323929852c9e961046daec905")},
+                .nChainTx = 251,
+                .blockhash = uint256S("0x5621d369be8588c82d1f46ab968b95c74465ce37ca62cee2aa5abc0692266d97")
             },
         };
 

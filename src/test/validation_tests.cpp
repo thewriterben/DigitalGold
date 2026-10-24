@@ -136,21 +136,22 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     const auto params = CreateChainParams(*m_node.args, ChainType::REGTEST);
 
     // These heights don't have assumeutxo configurations associated, per the contents
-    // of kernel/chainparams.cpp.
-    std::vector<int> bad_heights{0, 100, 111, 115, 209, 211};
+    // of kernel/chainparams.cpp. (DigitalGold's regtest entry is at height 250: the
+    // 240-block test fixture plus the ten blocks the snapshot tests mine.)
+    std::vector<int> bad_heights{0, 100, 110, 240, 249, 251, 349};
 
     for (auto empty : bad_heights) {
         const auto out = params->AssumeutxoForHeight(empty);
         BOOST_CHECK(!out);
     }
 
-    const auto out110 = *params->AssumeutxoForHeight(110);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1");
-    BOOST_CHECK_EQUAL(out110.nChainTx, 111U);
+    const auto out250 = *params->AssumeutxoForHeight(250);
+    BOOST_CHECK_EQUAL(out250.hash_serialized.ToString(), "17576da8dd8e776974083c4daba13d048007ddd323929852c9e961046daec905");
+    BOOST_CHECK_EQUAL(out250.nChainTx, 251U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256S("0x696e92821f65549c7ee134edceeeeaaa4105647a3c4fd9f298c0aec0ab50425c"));
-    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1");
-    BOOST_CHECK_EQUAL(out110_2.nChainTx, 111U);
+    const auto out250_2 = *params->AssumeutxoForBlockhash(uint256S("0x5621d369be8588c82d1f46ab968b95c74465ce37ca62cee2aa5abc0692266d97"));
+    BOOST_CHECK_EQUAL(out250_2.hash_serialized.ToString(), "17576da8dd8e776974083c4daba13d048007ddd323929852c9e961046daec905");
+    BOOST_CHECK_EQUAL(out250_2.nChainTx, 251U);
 }
 
 BOOST_AUTO_TEST_CASE(block_malleation)
