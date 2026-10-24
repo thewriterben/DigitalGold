@@ -362,8 +362,14 @@ BOOST_AUTO_TEST_CASE(bnb_search_test)
 
         CoinsResult available_coins;
 
+        // DigitalGold: an input's long-term fee is GetMinFee() (1000 sat for a 68-byte input,
+        // i.e. about 14.7k sat/kvB) rather than m_long_term_feerate, so per-input waste is
+        // negative below that rate. Use a rate above it here, and raise the cost of change so
+        // that a random three-input SRD solution cannot outscore BnB's exact match in the
+        // lower-feerate cases below.
+        coin_selection_params_bnb.m_cost_of_change = 1000;
         // single coin should be selected when effective fee > long term fee
-        coin_selection_params_bnb.m_effective_feerate = CFeeRate(5000);
+        coin_selection_params_bnb.m_effective_feerate = CFeeRate(20000);
 
         // Add selectable outputs, increasing their raw amounts by their input fee to make the effective value equal to the raw amount
         CAmount input_fee = coin_selection_params_bnb.m_effective_feerate.GetFee(/*num_bytes=*/68); // bech32 input size (default test output type)
@@ -460,8 +466,10 @@ BOOST_AUTO_TEST_CASE(bnb_sffo_restriction)
             rand,
             /*change_output_size=*/ 31,  // unused value, p2wpkh output size (wallet default change type)
             /*change_spend_size=*/ 68,   // unused value, p2wpkh input size (high-r signature)
-            /*effective_feerate=*/ CFeeRate(3000),
-            /*long_term_feerate=*/ CFeeRate(1000),
+            // DigitalGold: above the ~14.7k sat/kvB long-term fee implied by GetMinFee(), so
+            // that per-input waste is positive as upstream intends (3000 vs 1000 sat/kvB).
+            /*effective_feerate=*/ CFeeRate(20000),
+            /*discard_feerate=*/ CFeeRate(1000),
             /*tx_noinputs_size=*/ 0,
             /*avoid_partial=*/ false,
     };

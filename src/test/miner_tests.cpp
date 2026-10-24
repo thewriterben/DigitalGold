@@ -9,6 +9,7 @@
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
 #include <node/miner.h>
+#include <pow.h>
 #include <policy/policy.h>
 #include <test/util/random.h>
 #include <test/util/txmempool.h>
@@ -31,6 +32,14 @@ using node::CBlockTemplate;
 
 namespace miner_tests {
 struct MinerTestingSetup : public TestingSetup {
+    // DigitalGold: upstream mines these blocks against main-net parameters, but DigitalGold's
+    // main net retargets every block (64 s spacing) and starts at a 20-bit powLimit, so the
+    // one-second-apart test blocks would quickly become unminable. Regtest keeps the minimal
+    // difficulty for every block.
+    // The lock-time section relies on BIP68 (CSV) not being enforced yet at the test's
+    // height, as on Bitcoin's main net and regtest (csv@432); DigitalGold activates it at
+    // height 1, so push it out of reach here.
+    MinerTestingSetup() : TestingSetup{ChainType::REGTEST, {"-testactivationheight=csv@432"}} {}
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
@@ -51,6 +60,7 @@ struct MinerTestingSetup : public TestingSetup {
         return *m_node.mempool;
     }
     BlockAssembler AssemblerForTest(CTxMemPool& tx_mempool);
+    BlockAssembler AssemblerForTest(CTxMemPool& tx_mempool, const CFeeRate& block_min_feerate);
 };
 } // namespace miner_tests
 
@@ -60,10 +70,15 @@ static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
 BlockAssembler MinerTestingSetup::AssemblerForTest(CTxMemPool& tx_mempool)
 {
+    return AssemblerForTest(tx_mempool, blockMinFeeRate);
+}
+
+BlockAssembler MinerTestingSetup::AssemblerForTest(CTxMemPool& tx_mempool, const CFeeRate& block_min_feerate)
+{
     BlockAssembler::Options options;
 
     options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-    options.blockMinFeeRate = blockMinFeeRate;
+    options.blockMinFeeRate = block_min_feerate;
     return BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options};
 }
 
@@ -108,6 +123,12 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     // Test the ancestor feerate transaction selection.
     TestMemPoolEntryHelper entry;
 
+    // DigitalGold: by consensus every transaction pays at least GetMinFee() (1000 atoms for
+    // the small transactions used here), so upstream's zero-fee parents pay exactly that
+    // instead, and the block min fee rate used in this function is raised above it so that
+    // such a parent is still too cheap to be mined on its own.
+    const CFeeRate package_min_feerate{20000};
+
     // Test that a medium fee transaction will be selected after a higher fee
     // rate package with a low fee rate parent.
     CMutableTransaction tx;
@@ -133,7 +154,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     uint256 hashHighFeeTx = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(50000).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx));
 
-    std::unique_ptr<CBlockTemplate> pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
+    std::unique_ptr<CBlockTemplate> pblocktemplate = AssemblerForTest(tx_mempool, package_min_feerate).CreateNewBlock(scriptPubKey);
     BOOST_REQUIRE_EQUAL(pblocktemplate->block.vtx.size(), 4U);
     BOOST_CHECK(pblocktemplate->block.vtx[1]->GetHash() == hashParentTx);
     BOOST_CHECK(pblocktemplate->block.vtx[2]->GetHash() == hashHighFeeTx);
@@ -141,20 +162,21 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
 
     // Test that a package below the block min tx fee doesn't get included
     tx.vin[0].prevout.hash = hashHighFeeTx;
-    tx.vout[0].nValue = 5000000000LL - 1000 - 50000; // 0 fee
-    uint256 hashFreeTx = tx.GetHash();
-    tx_mempool.addUnchecked(entry.Fee(0).FromTx(tx));
     size_t freeTxSize = ::GetSerializeSize(TX_WITH_WITNESS(tx));
+    const CAmount freeTxFee{GetMinFee(freeTxSize)}; // consensus minimum, below package_min_feerate
+    tx.vout[0].nValue = 5000000000LL - 1000 - 50000 - freeTxFee;
+    uint256 hashFreeTx = tx.GetHash();
+    tx_mempool.addUnchecked(entry.Fee(freeTxFee).FromTx(tx));
 
     // Calculate a fee on child transaction that will put the package just
     // below the block min tx fee (assuming 1 child tx of the same size).
-    CAmount feeToUse = blockMinFeeRate.GetFee(2*freeTxSize) - 1;
+    CAmount feeToUse = package_min_feerate.GetFee(2*freeTxSize) - freeTxFee - 1;
 
     tx.vin[0].prevout.hash = hashFreeTx;
-    tx.vout[0].nValue = 5000000000LL - 1000 - 50000 - feeToUse;
+    tx.vout[0].nValue = 5000000000LL - 1000 - 50000 - freeTxFee - feeToUse;
     uint256 hashLowFeeTx = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(feeToUse).FromTx(tx));
-    pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
+    pblocktemplate = AssemblerForTest(tx_mempool, package_min_feerate).CreateNewBlock(scriptPubKey);
     // Verify that the free tx and the low fee tx didn't get selected
     for (size_t i=0; i<pblocktemplate->block.vtx.size(); ++i) {
         BOOST_CHECK(pblocktemplate->block.vtx[i]->GetHash() != hashFreeTx);
@@ -168,29 +190,30 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vout[0].nValue -= 2; // Now we should be just over the min relay fee
     hashLowFeeTx = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(feeToUse + 2).FromTx(tx));
-    pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
+    pblocktemplate = AssemblerForTest(tx_mempool, package_min_feerate).CreateNewBlock(scriptPubKey);
     BOOST_REQUIRE_EQUAL(pblocktemplate->block.vtx.size(), 6U);
     BOOST_CHECK(pblocktemplate->block.vtx[4]->GetHash() == hashFreeTx);
     BOOST_CHECK(pblocktemplate->block.vtx[5]->GetHash() == hashLowFeeTx);
 
     // Test that transaction selection properly updates ancestor fee
     // calculations as ancestor transactions get included in a block.
-    // Add a 0-fee transaction that has 2 outputs.
+    // Add a minimum-fee transaction that has 2 outputs.
     tx.vin[0].prevout.hash = txFirst[2]->GetHash();
     tx.vout.resize(2);
-    tx.vout[0].nValue = 5000000000LL - 100000000;
+    const CAmount freeTx2Fee{GetMinFee(::GetSerializeSize(TX_WITH_WITNESS(tx)))};
+    tx.vout[0].nValue = 5000000000LL - 100000000 - freeTx2Fee;
     tx.vout[1].nValue = 100000000; // 1BTC output
     uint256 hashFreeTx2 = tx.GetHash();
-    tx_mempool.addUnchecked(entry.Fee(0).SpendsCoinbase(true).FromTx(tx));
+    tx_mempool.addUnchecked(entry.Fee(freeTx2Fee).SpendsCoinbase(true).FromTx(tx));
 
     // This tx can't be mined by itself
     tx.vin[0].prevout.hash = hashFreeTx2;
     tx.vout.resize(1);
-    feeToUse = blockMinFeeRate.GetFee(freeTxSize);
-    tx.vout[0].nValue = 5000000000LL - 100000000 - feeToUse;
+    feeToUse = package_min_feerate.GetFee(freeTxSize);
+    tx.vout[0].nValue = 5000000000LL - 100000000 - freeTx2Fee - feeToUse;
     uint256 hashLowFeeTx2 = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(feeToUse).SpendsCoinbase(false).FromTx(tx));
-    pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
+    pblocktemplate = AssemblerForTest(tx_mempool, package_min_feerate).CreateNewBlock(scriptPubKey);
 
     // Verify that this tx isn't selected.
     for (size_t i=0; i<pblocktemplate->block.vtx.size(); ++i) {
@@ -203,7 +226,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vin[0].prevout.n = 1;
     tx.vout[0].nValue = 100000000 - 10000; // 10k satoshi fee
     tx_mempool.addUnchecked(entry.Fee(10000).FromTx(tx));
-    pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
+    pblocktemplate = AssemblerForTest(tx_mempool, package_min_feerate).CreateNewBlock(scriptPubKey);
     BOOST_REQUIRE_EQUAL(pblocktemplate->block.vtx.size(), 9U);
     BOOST_CHECK(pblocktemplate->block.vtx[8]->GetHash() == hashLowFeeTx2);
 }
@@ -237,7 +260,10 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vin[0].prevout.n = 0;
         tx.vout.resize(1);
         tx.vout[0].nValue = BLOCKSUBSIDY;
-        for (unsigned int i = 0; i < 1001; ++i) {
+        // DigitalGold: MAX_BLOCK_SIGOPS_COST is 160000, so one transaction more than fits
+        // (each counts 20 legacy sigops, i.e. 80 cost) is 2001 rather than upstream's 1001.
+        const unsigned int sigop_txs{static_cast<unsigned int>(MAX_BLOCK_SIGOPS_COST / (20 * WITNESS_SCALE_FACTOR)) + 1};
+        for (unsigned int i = 0; i < sigop_txs; ++i) {
             tx.vout[0].nValue -= LOWFEE;
             hash = tx.GetHash();
             bool spendsCoinbase = i == 0; // only first tx spends coinbase
@@ -574,14 +600,17 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     tx_mempool.addUnchecked(entry.Fee(0).SpendsCoinbase(true).FromTx(tx));
     tx_mempool.PrioritiseTransaction(hashFreeParent, 10 * COIN);
 
+    // DigitalGold: a transaction must pay at least GetMinFee() (1000 atoms here) by consensus,
+    // so the child and grandchild leave that much behind; the mempool entries still carry a
+    // zero fee, which is what the prioritisation logic under test sees.
     tx.vin[0].prevout.hash = hashFreeParent;
-    tx.vout[0].nValue = 5000000000LL; // 0 fee
+    tx.vout[0].nValue = 5000000000LL - 1000; // 0 fee (as far as the mempool entry is concerned)
     uint256 hashFreeChild = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
     tx_mempool.PrioritiseTransaction(hashFreeChild, 1 * COIN);
 
     tx.vin[0].prevout.hash = hashFreeChild;
-    tx.vout[0].nValue = 5000000000LL; // 0 fee
+    tx.vout[0].nValue = 5000000000LL - 2000; // 0 fee (as far as the mempool entry is concerned)
     uint256 hashFreeGrandchild = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
 
@@ -633,7 +662,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             if (txFirst.size() < 4)
                 txFirst.push_back(pblock->vtx[0]);
             pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
+            // DigitalGold: the hard-coded nonces were mined against Bitcoin's regtest genesis
+            // block, so start from them and search for a nonce that is valid on this chain.
             pblock->nNonce = bi.nonce;
+            while (!CheckProofOfWork(pblock->GetHash(), pblock->nBits, m_node.chainman->GetConsensus())) ++pblock->nNonce;
         }
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
         BOOST_CHECK(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, true, true, nullptr));
