@@ -35,7 +35,6 @@ Test is as follows:
     node1 can't write to disk.
 
 """
-from decimal import Decimal
 import os
 import time
 
@@ -46,7 +45,7 @@ from test_framework.util import (
     assert_greater_than_or_equal,
     assert_raises_rpc_error,
 )
-from test_framework.wallet import MiniWallet, COIN
+from test_framework.wallet import MiniWallet
 
 
 class MempoolPersistTest(BitcoinTestFramework):
@@ -85,15 +84,9 @@ class MempoolPersistTest(BitcoinTestFramework):
 
         total_fee_old = self.nodes[0].getmempoolinfo()['total_fee']
 
-        self.log.debug("Prioritize a transaction on node0")
+        # (DigitalGold has no prioritisetransaction RPC, so no prioritisation is persisted)
         fees = self.nodes[0].getmempoolentry(txid=last_txid)['fees']
         assert_equal(fees['base'], fees['modified'])
-        self.nodes[0].prioritisetransaction(txid=last_txid, fee_delta=1000)
-        fees = self.nodes[0].getmempoolentry(txid=last_txid)['fees']
-        assert_equal(fees['base'] + Decimal('0.00001000'), fees['modified'])
-
-        self.log.info('Check the total base fee is unchanged after prioritisetransaction')
-        assert_equal(total_fee_old, self.nodes[0].getmempoolinfo()['total_fee'])
         assert_equal(total_fee_old, sum(v['fees']['base'] for k, v in self.nodes[0].getrawmempool(verbose=True).items()))
 
         last_entry = self.nodes[0].getmempoolentry(txid=last_txid)
@@ -107,10 +100,8 @@ class MempoolPersistTest(BitcoinTestFramework):
         assert_equal(len(self.nodes[0].p2ps), 0)
         self.mini_wallet.send_self_transfer(from_node=self.nodes[0])
 
-        # Test persistence of prioritisation for transactions not in the mempool.
-        # Create a tx and prioritise but don't submit until after the restart.
+        # Create a tx but don't submit until after the restart.
         tx_prioritised_not_submitted = self.mini_wallet.create_self_transfer()
-        self.nodes[0].prioritisetransaction(txid=tx_prioritised_not_submitted['txid'], fee_delta=9999)
 
         self.log.debug("Stop-start the nodes. Verify that node0 has the transactions in its mempool and node1 does not. Verify that node2 calculates its balance correctly after loading wallet transactions.")
         self.stop_nodes()
@@ -126,15 +117,11 @@ class MempoolPersistTest(BitcoinTestFramework):
         # The others have loaded their mempool. If node_1 loaded anything, we'd probably notice by now:
         assert_equal(len(self.nodes[1].getrawmempool()), 0)
 
-        self.log.debug('Verify prioritization is loaded correctly')
-        fees = self.nodes[0].getmempoolentry(txid=last_txid)['fees']
-        assert_equal(fees['base'] + Decimal('0.00001000'), fees['modified'])
-
         self.log.debug('Verify all fields are loaded correctly')
         assert_equal(last_entry, self.nodes[0].getmempoolentry(txid=last_txid))
         self.nodes[0].sendrawtransaction(tx_prioritised_not_submitted['hex'])
         entry_prioritised_before_restart = self.nodes[0].getmempoolentry(txid=tx_prioritised_not_submitted['txid'])
-        assert_equal(entry_prioritised_before_restart['fees']['base'] + Decimal('0.00009999'), entry_prioritised_before_restart['fees']['modified'])
+        assert_equal(entry_prioritised_before_restart['fees']['base'], entry_prioritised_before_restart['fees']['modified'])
 
         # Verify accounting of mempool transactions after restart is correct
         if self.is_sqlite_compiled():
@@ -167,7 +154,7 @@ class MempoolPersistTest(BitcoinTestFramework):
         assert_equal({}, self.nodes[0].importmempool(mempooldat0, {"apply_fee_delta_priority": True, "apply_unbroadcast_set": True}))
         assert_equal(2, self.nodes[0].getmempoolinfo()["unbroadcastcount"])
         fees = self.nodes[0].getmempoolentry(txid=last_txid)["fees"]
-        assert_equal(fees["base"] + Decimal("0.00001000"), fees["modified"])
+        assert_equal(fees["base"], fees["modified"])  # no prioritisation on DigitalGold
 
         self.log.debug("Stop-start node0. Verify that it has the transactions in its mempool.")
         self.stop_nodes()
@@ -229,9 +216,6 @@ class MempoolPersistTest(BitcoinTestFramework):
         tx_node1 = self.mini_wallet.send_self_transfer(from_node=self.nodes[1])
         tx_node01 = self.mini_wallet.create_self_transfer()
         tx_node01_secret = self.mini_wallet.create_self_transfer()
-        self.nodes[0].prioritisetransaction(tx_node01["txid"], 0, COIN)
-        self.nodes[0].prioritisetransaction(tx_node01_secret["txid"], 0, 2 * COIN)
-        self.nodes[1].prioritisetransaction(tx_node01_secret["txid"], 0, 3 * COIN)
         self.nodes[0].sendrawtransaction(tx_node01["hex"])
         self.nodes[1].sendrawtransaction(tx_node01["hex"])
         assert tx_node0["txid"] in self.nodes[0].getrawmempool()
@@ -252,13 +236,12 @@ class MempoolPersistTest(BitcoinTestFramework):
         assert tx_node0["txid"] in self.nodes[1].getrawmempool()
         assert tx_node1["txid"] in self.nodes[1].getrawmempool()
         assert not tx_node1["txid"] in self.nodes[0].getrawmempool()
-        # For transactions that already existed, priority should be changed
+        # (no prioritisation on DigitalGold: fees stay unmodified)
         entry_node01 = self.nodes[1].getmempoolentry(tx_node01["txid"])
-        assert_equal(entry_node01["fees"]["base"] + 1, entry_node01["fees"]["modified"])
-        # Deltas for not-yet-submitted transactions should be applied as well (prioritisation is stackable).
+        assert_equal(entry_node01["fees"]["base"], entry_node01["fees"]["modified"])
         self.nodes[1].sendrawtransaction(tx_node01_secret["hex"])
         entry_node01_secret = self.nodes[1].getmempoolentry(tx_node01_secret["txid"])
-        assert_equal(entry_node01_secret["fees"]["base"] + 5, entry_node01_secret["fees"]["modified"])
+        assert_equal(entry_node01_secret["fees"]["base"], entry_node01_secret["fees"]["modified"])
         self.stop_nodes()
 
 

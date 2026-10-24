@@ -226,6 +226,17 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
  */
 BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
 {
+    // DigitalGold: this test reorganises out nCoinbaseMaturity + 22 blocks, but forks deeper
+    // than nMaxReorganizationDepth (10 on regtest) are rejected by ContextualCheckBlockHeader(),
+    // so the scenario cannot occur on this chain. Skip rather than weaken the test.
+    {
+        const auto& consensus{Params().GetConsensus()};
+        const int reorg_depth{consensus.nCoinbaseMaturity + 22 + 1};
+        if (reorg_depth > consensus.nMaxReorganizationDepth) {
+            BOOST_TEST_MESSAGE(strprintf("skipping: needs a %d-block reorg but nMaxReorganizationDepth is %d", reorg_depth, consensus.nMaxReorganizationDepth));
+            return;
+        }
+    }
     bool ignored;
     auto ProcessBlock = [&](std::shared_ptr<const CBlock> block) -> bool {
         return Assert(m_node.chainman)->ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&ignored);

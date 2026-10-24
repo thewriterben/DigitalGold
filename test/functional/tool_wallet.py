@@ -33,7 +33,7 @@ class ToolWalletTest(BitcoinTestFramework):
 
     def bitcoin_wallet_process(self, *args):
         binary = self.config["environment"]["BUILDDIR"] + '/src/digitalgold-wallet' + self.config["environment"]["EXEEXT"]
-        default_args = ['-datadir={}'.format(self.nodes[0].datadir), '-chain=%s' % self.chain]
+        default_args = ['-datadir={}'.format(self.nodes[0].datadir_path), '-chain=%s' % self.chain]
         if not self.options.descriptors and 'create' in args:
             default_args.append('-legacy')
 
@@ -464,7 +464,7 @@ class ToolWalletTest(BitcoinTestFramework):
             # Salvage is a legacy wallet only thing
             self.test_salvage()
         self.test_dump_createfromdump()
-        self.test_chainless_conflicts()
+        # self.test_chainless_conflicts()  # needs a mempool double spend (RBF), unsupported on DigitalGold
 
 if __name__ == '__main__':
     ToolWalletTest().main()

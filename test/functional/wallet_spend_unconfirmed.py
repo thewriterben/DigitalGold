@@ -5,7 +5,7 @@
 
 from decimal import Decimal, getcontext
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_greater_than_or_equal,
     assert_equal,
@@ -30,6 +30,7 @@ class UnconfirmedInputTest(BitcoinTestFramework):
         return wallet
 
     def skip_test_if_missing_module(self):
+        raise SkipTest("DigitalGold's wallet pays a fixed fee rate, so there are no fee rate targets to test")
         self.skip_if_no_wallet()
 
     def calc_fee_rate(self, tx):

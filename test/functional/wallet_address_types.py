@@ -260,13 +260,13 @@ class AddressTypeTest(BitcoinTestFramework):
                 if from_node == 1:
                     address_type = 'bech32'
                 elif from_node == 0 or from_node == 3:
-                    address_type = 'p2sh-segwit'
+                    address_type = 'bech32'  # DigitalGold refuses p2sh-segwit addresses
                 else:
                     address_type = 'legacy'
             self.log.info("Sending from node {} ({}) with{} multisig using {}".format(from_node, self.extra_args[from_node], "" if multisig else "out", "default" if address_type is None else address_type))
             old_balances = self.get_balances()
             self.log.debug("Old balances are {}".format(old_balances))
-            to_send = (old_balances[from_node] / (COINBASE_MATURITY + 1)).quantize(Decimal("0.00000001"))
+            to_send = (old_balances[from_node] / 101).quantize(Decimal("0.00000001"))  # the sends below add up to 100 * to_send
             sends = {}
             addresses = {}
 
@@ -378,13 +378,13 @@ class AddressTypeTest(BitcoinTestFramework):
         self.test_address(4, self.nodes[4].getrawchangeaddress(), multisig=False, typ='p2sh-segwit')
         self.test_address(4, self.nodes[4].getrawchangeaddress('bech32'), multisig=False, typ='bech32')
 
+        self.log.info("No wallet hands out bech32m receiving addresses (Taproot is not active on DigitalGold)")
+        assert_raises_rpc_error(-8, "bech32m", self.nodes[4].getnewaddress, "", "bech32m")
+        assert_raises_rpc_error(-8, "bech32m", self.nodes[0].getnewaddress, "", "bech32m")
         if self.options.descriptors:
-            self.log.info("Descriptor wallets have bech32m addresses")
-            self.test_address(4, self.nodes[4].getnewaddress("", "bech32m"), multisig=False, typ="bech32m")
+            # (getrawchangeaddress is not gated, so a descriptor wallet still produces bech32m change on request)
             self.test_address(4, self.nodes[4].getrawchangeaddress("bech32m"), multisig=False, typ="bech32m")
         else:
-            self.log.info("Legacy wallets cannot make bech32m addresses")
-            assert_raises_rpc_error(-8, "Legacy wallets cannot provide bech32m addresses", self.nodes[0].getnewaddress, "", "bech32m")
             assert_raises_rpc_error(-8, "Legacy wallets cannot provide bech32m addresses", self.nodes[0].getrawchangeaddress, "bech32m")
 
 if __name__ == '__main__':

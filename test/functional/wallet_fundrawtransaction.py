@@ -6,7 +6,6 @@
 
 
 from decimal import Decimal
-from itertools import product
 from math import ceil
 
 from test_framework.descriptors import descsum_create
@@ -23,7 +22,6 @@ from test_framework.util import (
     assert_raises_rpc_error,
     count_bytes,
     find_vout_for_address,
-    get_fee,
 )
 from test_framework.wallet_util import generate_keypair, WalletUnlock
 
@@ -153,7 +151,7 @@ class RawTransactionsTest(BitcoinTestFramework):
     def test_change_position(self):
         """Ensure setting changePosition in fundraw with an exact match is handled properly."""
         self.log.info("Test fundrawtxn changePosition option")
-        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress():50})
+        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress():1000})  # exactly one 1000 DGD coinbase
         rawmatch = self.nodes[2].fundrawtransaction(rawmatch, changePosition=1, subtractFeeFromOutputs=[0])
         assert_equal(rawmatch["changepos"], -1)
 
@@ -236,7 +234,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         utx = get_unspent(self.nodes[2].listunspent(), 5)
 
         inputs  = [ {'txid' : utx['txid'], 'vout' : utx['vout']}]
-        outputs = {self.nodes[0].getnewaddress(): Decimal(5.0) - self.test_no_change_fee - self.fee_tolerance}
+        # DigitalGold: the wallet budgets the consensus minimum fee (1000 satoshi) for the input and for the
+        # rest of the transaction separately, so a 5 DGD input only covers a one-output transaction when it
+        # leaves about twice the fee of that shape; the surplus is simply paid as fee (and burnt)
+        addr = self.nodes[0].getnewaddress()
+        probe = self.nodes[2].fundrawtransaction(self.nodes[2].createrawtransaction(inputs, {addr: Decimal(5.0)}), {"subtractFeeFromOutputs": [0]})
+        outputs = {addr: Decimal(5.0) - 2 * probe['fee']}
         rawtx   = self.nodes[2].createrawtransaction(inputs, outputs)
         dec_tx  = self.nodes[2].decoderawtransaction(rawtx)
         assert_equal(utx['txid'], dec_tx['vin'][0]['txid'])
@@ -276,7 +279,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         dec_tx  = self.nodes[2].decoderawtransaction(rawtx)
         assert_equal(utx['txid'], dec_tx['vin'][0]['txid'])
 
-        assert_raises_rpc_error(-5, "Change address must be a valid bitcoin address", self.nodes[2].fundrawtransaction, rawtx, changeAddress='foobar')
+        assert_raises_rpc_error(-5, "Change address must be a valid digitalgold address", self.nodes[2].fundrawtransaction, rawtx, changeAddress='foobar')
 
     def test_valid_change_address(self):
         self.log.info("Test fundrawtxn with a provided change address")
@@ -602,8 +605,10 @@ class RawTransactionsTest(BitcoinTestFramework):
         inputs = wallet.listunspent()
 
         # Deduce exact fee to produce a changeless transaction
-        tx_size = 110  # Total tx size: 110 vbytes, p2wpkh -> p2wpkh. Input 68 vbytes + rest of tx is 42 vbytes.
-        value = inputs[0]["amount"] - get_fee(tx_size, self.min_relay_tx_fee)
+        # DigitalGold: a 110 vbyte p2wpkh -> p2wpkh transaction pays 1100 satoshi (10 sat/vB), but the wallet
+        # budgets the 1000 satoshi minimum for the input and for the rest separately, so leave twice that fee
+        # (see test_no_change)
+        value = inputs[0]["amount"] - Decimal("0.00002200")
 
         outputs = {self.nodes[0].getnewaddress():value}
         rawtx = wallet.createrawtransaction(inputs, outputs)
@@ -624,6 +629,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         assert_raises_rpc_error(-13, "walletpassphrase", wallet.sendtoaddress, self.nodes[0].getnewaddress(), 1.2)
 
         oldBalance = self.nodes[0].getbalance()
+        immature_before = self.nodes[0].getbalances()['mine']['immature']
 
         inputs = []
         outputs = {self.nodes[0].getnewaddress():1.1}
@@ -637,8 +643,9 @@ class RawTransactionsTest(BitcoinTestFramework):
             wallet.sendrawtransaction(signedTx['hex'])
             self.generate(self.nodes[1], 1)
 
-            # Make sure funds are received at node1.
-            assert_equal(oldBalance+Decimal('51.10000000'), self.nodes[0].getbalance())
+            # Make sure funds are received at node 0 (DigitalGold: plus any coinbase of node 0 that matured with the block).
+            matured = immature_before - self.nodes[0].getbalances()['mine']['immature']
+            assert_equal(oldBalance+Decimal('1.10000000')+matured, self.nodes[0].getbalance())
 
             # Restore pre-test wallet state
             wallet.sendall(recipients=[df_wallet.getnewaddress(), df_wallet.getnewaddress(), df_wallet.getnewaddress()])
@@ -685,6 +692,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         # Fund a tx with ~20 small inputs.
         oldBalance = self.nodes[0].getbalance()
+        immature_before = self.nodes[0].getbalances()['mine']['immature']
 
         inputs = []
         outputs = {self.nodes[0].getnewaddress():0.15,self.nodes[0].getnewaddress():0.04}
@@ -693,7 +701,8 @@ class RawTransactionsTest(BitcoinTestFramework):
         fundedAndSignedTx = self.nodes[1].signrawtransactionwithwallet(fundedTx['hex'])
         self.nodes[1].sendrawtransaction(fundedAndSignedTx['hex'])
         self.generate(self.nodes[1], 1)
-        assert_equal(oldBalance+Decimal('50.19000000'), self.nodes[0].getbalance()) #0.19+block reward
+        matured = immature_before - self.nodes[0].getbalances()['mine']['immature']  # (DigitalGold: block rewards mature 10 blocks later)
+        assert_equal(oldBalance+Decimal('0.19000000')+matured, self.nodes[0].getbalance())  # 0.19 + matured block reward
 
     def test_op_return(self):
         self.log.info("Test fundrawtxn with OP_RETURN and no vin")
@@ -782,84 +791,47 @@ class RawTransactionsTest(BitcoinTestFramework):
         outputs = {node.getnewaddress() : 1}
         rawtx = node.createrawtransaction(inputs, outputs)
 
-        result = node.fundrawtransaction(rawtx)  # uses self.min_relay_tx_fee (set by settxfee)
+        result = node.fundrawtransaction(rawtx)  # uses self.min_relay_tx_fee (set by settxfee), floored at DigitalGold's 10 sat/vB
         btc_kvb_to_sat_vb = 100000  # (1e5)
+        # DigitalGold: fee_rate (sat/vB) is accepted but only feeRate (DGD/kvB) is honoured, and there is no fee estimation
         result1 = node.fundrawtransaction(rawtx, fee_rate=str(2 * btc_kvb_to_sat_vb * self.min_relay_tx_fee))
-        result2 = node.fundrawtransaction(rawtx, feeRate=2 * self.min_relay_tx_fee)
-        result3 = node.fundrawtransaction(rawtx, fee_rate=10 * btc_kvb_to_sat_vb * self.min_relay_tx_fee)
-        result4 = node.fundrawtransaction(rawtx, feeRate=str(10 * self.min_relay_tx_fee))
+        result2 = node.fundrawtransaction(rawtx, feeRate=20 * self.min_relay_tx_fee)
+        result4 = node.fundrawtransaction(rawtx, feeRate=str(100 * self.min_relay_tx_fee))
 
         result_fee_rate = result['fee'] * 1000 / count_bytes(result['hex'])
-        assert_fee_amount(result1['fee'], count_bytes(result1['hex']), 2 * result_fee_rate)
+        assert_equal(result1['fee'], result['fee'])
         assert_fee_amount(result2['fee'], count_bytes(result2['hex']), 2 * result_fee_rate)
-        assert_fee_amount(result3['fee'], count_bytes(result3['hex']), 10 * result_fee_rate)
         assert_fee_amount(result4['fee'], count_bytes(result4['hex']), 10 * result_fee_rate)
 
-        # Test that funding non-standard "zero-fee" transactions is valid.
-        for param, zero_value in product(["fee_rate", "feeRate"], [0, 0.000, 0.00000000, "0", "0.000", "0.00000000"]):
-            assert_equal(self.nodes[3].fundrawtransaction(rawtx, {param: zero_value})["fee"], 0)
+        # Test that funding "zero-fee" transactions pays DigitalGold's minimum fee instead.
+        for zero_value in [0, 0.000, 0.00000000, "0", "0.000", "0.00000000"]:
+            assert_equal(node.fundrawtransaction(rawtx, {"fee_rate": zero_value})["fee"], result['fee'])
+            assert_equal(node.fundrawtransaction(rawtx, {"feeRate": zero_value})["fee"], Decimal('0.00001'))  # 1000 satoshi consensus minimum
 
-        # With no arguments passed, expect fee of 141 satoshis.
-        assert_approx(node.fundrawtransaction(rawtx)["fee"], vexp=0.00000141, vspan=0.00000001)
-        # Expect fee to be 10,000x higher when an explicit fee rate 10,000x greater is specified.
-        result = node.fundrawtransaction(rawtx, fee_rate=10000)
+        # With no arguments passed, expect fee of 1410 satoshis (141 vbytes at 10 sat/vB).
+        assert_approx(node.fundrawtransaction(rawtx)["fee"], vexp=0.0000141, vspan=0.0000001)
+        # Expect fee to be 1,000x higher when an explicit fee rate 1,000x greater is specified.
+        result = node.fundrawtransaction(rawtx, feeRate=0.1)
         assert_approx(result["fee"], vexp=0.0141, vspan=0.0001)
 
-        self.log.info("Test fundrawtxn with invalid estimate_mode settings")
-        for k, v in {"number": 42, "object": {"foo": "bar"}}.items():
-            assert_raises_rpc_error(-3, f"JSON value of type {k} for field estimate_mode is not of expected type string",
-                node.fundrawtransaction, rawtx, estimate_mode=v, conf_target=0.1, add_inputs=True)
-        for mode in ["", "foo", Decimal("3.141592")]:
-            assert_raises_rpc_error(-8, 'Invalid estimate_mode parameter, must be one of: "unset", "economical", "conservative"',
-                node.fundrawtransaction, rawtx, estimate_mode=mode, conf_target=0.1, add_inputs=True)
-
-        self.log.info("Test fundrawtxn with invalid conf_target settings")
-        for mode in ["unset", "economical", "conservative"]:
-            self.log.debug("{}".format(mode))
-            for k, v in {"string": "", "object": {"foo": "bar"}}.items():
-                assert_raises_rpc_error(-3, f"JSON value of type {k} for field conf_target is not of expected type number",
-                    node.fundrawtransaction, rawtx, estimate_mode=mode, conf_target=v, add_inputs=True)
-            for n in [-1, 0, 1009]:
-                assert_raises_rpc_error(-8, "Invalid conf_target, must be between 1 and 1008",  # max value of 1008 per src/policy/fees.h
-                    node.fundrawtransaction, rawtx, estimate_mode=mode, conf_target=n, add_inputs=True)
-
         self.log.info("Test invalid fee rate settings")
-        for param, value in {("fee_rate", 100000), ("feeRate", 1.000)}:
-            assert_raises_rpc_error(-4, "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)",
-                node.fundrawtransaction, rawtx, add_inputs=True, **{param: value})
-            assert_raises_rpc_error(-3, "Amount out of range",
-                node.fundrawtransaction, rawtx, add_inputs=True, **{param: -1})
-            assert_raises_rpc_error(-3, "Amount is not a number or string",
-                node.fundrawtransaction, rawtx, add_inputs=True, **{param: {"foo": "bar"}})
-            # Test fee rate values that don't pass fixed-point parsing checks.
-            for invalid_value in ["", 0.000000001, 1e-09, 1.111111111, 1111111111111111, "31.999999999999999999999"]:
-                assert_raises_rpc_error(-3, "Invalid amount", node.fundrawtransaction, rawtx, add_inputs=True, **{param: invalid_value})
-        # Test fee_rate values that cannot be represented in sat/vB.
-        for invalid_value in [0.0001, 0.00000001, 0.00099999, 31.99999999]:
-            assert_raises_rpc_error(-3, "Invalid amount",
-                node.fundrawtransaction, rawtx, fee_rate=invalid_value, add_inputs=True)
+        assert_raises_rpc_error(-4, "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)",
+            node.fundrawtransaction, rawtx, add_inputs=True, feeRate=1.000)
+        assert_raises_rpc_error(-3, "Amount out of range",
+            node.fundrawtransaction, rawtx, add_inputs=True, feeRate=-1)
+        assert_raises_rpc_error(-3, "Amount is not a number or string",
+            node.fundrawtransaction, rawtx, add_inputs=True, feeRate={"foo": "bar"})
+        # Test fee rate values that don't pass fixed-point parsing checks.
+        for invalid_value in ["", 0.000000001, 1e-09, 1.111111111, 1111111111111111, "31.999999999999999999999"]:
+            assert_raises_rpc_error(-3, "Invalid amount", node.fundrawtransaction, rawtx, add_inputs=True, feeRate=invalid_value)
 
-        self.log.info("Test min fee rate checks are bypassed with fundrawtxn, e.g. a fee_rate under 1 sat/vB is allowed")
+        self.log.info("Test min fee rate checks are bypassed with fundrawtxn, e.g. a fee rate under 1 sat/vB is allowed (DigitalGold then charges its minimum)")
         node.fundrawtransaction(rawtx, fee_rate=0.999, add_inputs=True)
         node.fundrawtransaction(rawtx, feeRate=0.00000999, add_inputs=True)
 
         self.log.info("- raises RPC error if both feeRate and fee_rate are passed")
-        assert_raises_rpc_error(-8, "Cannot specify both fee_rate (sat/vB) and feeRate (BTC/kvB)",
+        assert_raises_rpc_error(-8, "Cannot specify both fee_rate",
             node.fundrawtransaction, rawtx, fee_rate=0.1, feeRate=0.1, add_inputs=True)
-
-        self.log.info("- raises RPC error if both feeRate and estimate_mode passed")
-        assert_raises_rpc_error(-8, "Cannot specify both estimate_mode and feeRate",
-            node.fundrawtransaction, rawtx, estimate_mode="economical", feeRate=0.1, add_inputs=True)
-
-        for param in ["feeRate", "fee_rate"]:
-            self.log.info("- raises RPC error if both {} and conf_target are passed".format(param))
-            assert_raises_rpc_error(-8, "Cannot specify both conf_target and {}. Please provide either a confirmation "
-                "target in blocks for automatic fee estimation, or an explicit fee rate.".format(param),
-                node.fundrawtransaction, rawtx, {param: 1, "conf_target": 1, "add_inputs": True})
-
-        self.log.info("- raises RPC error if both fee_rate and estimate_mode are passed")
-        assert_raises_rpc_error(-8, "Cannot specify both estimate_mode and fee_rate",
-            node.fundrawtransaction, rawtx, fee_rate=1, estimate_mode="economical", add_inputs=True)
 
     def test_address_reuse(self):
         """Test no address reuse occurs."""
@@ -1418,7 +1390,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         self.log.info("Crafting TX using an unconfirmed input")
         target_address = self.nodes[2].getnewaddress()
-        raw_tx1 = wallet.createrawtransaction([], {target_address: 0.1}, 0, True)
+        raw_tx1 = wallet.createrawtransaction([], {target_address: 0.1}, 0)  # (no replaceable argument on DigitalGold)
         funded_tx1 = wallet.fundrawtransaction(raw_tx1, {'fee_rate': 1, 'maxconf': 0})['hex']
 
         # Make sure we only had the one input
@@ -1447,7 +1419,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         # because the input will no longer exist once the first tx gets replaced by this new one).
         funded_invalid = wallet.fundrawtransaction(raw_tx2, {'add_inputs': True, 'maxconf': 0, 'fee_rate': 10})['hex']
         final_invalid = wallet.signrawtransactionwithwallet(funded_invalid)['hex']
-        assert_raises_rpc_error(-26, "bad-txns-spends-conflicting-tx", self.nodes[0].sendrawtransaction, final_invalid)
+        assert_raises_rpc_error(-26, "txn-mempool-conflict", self.nodes[0].sendrawtransaction, final_invalid)
 
         self.log.info("Craft a replacement adding inputs with highest depth possible")
         funded_tx2 = wallet.fundrawtransaction(raw_tx2, {'add_inputs': True, 'minconf': 2, 'fee_rate': 10})['hex']
@@ -1458,11 +1430,11 @@ class RawTransactionsTest(BitcoinTestFramework):
                 assert_greater_than_or_equal(self.nodes[0].gettxout(vin['txid'], vin['vout'])['confirmations'], 2)
 
         final_tx2 = wallet.signrawtransactionwithwallet(funded_tx2)['hex']
-        txid2 = self.nodes[0].sendrawtransaction(final_tx2)
+        # (DigitalGold has no replace-by-fee: the replacement conflicts with the unconfirmed transaction)
+        assert_raises_rpc_error(-26, "txn-mempool-conflict", self.nodes[0].sendrawtransaction, final_tx2)
 
         mempool = self.nodes[0].getrawmempool()
-        assert txid1 not in mempool
-        assert txid2 in mempool
+        assert txid1 in mempool
 
         wallet.unloadwallet()
 

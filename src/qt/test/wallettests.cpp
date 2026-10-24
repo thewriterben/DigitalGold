@@ -200,7 +200,7 @@ std::shared_ptr<CWallet> SetupLegacyWatchOnlyWallet(interfaces::Node& node, Test
         CPubKey pubKey = test.coinbaseKey.GetPubKey();
         bool import_keys = wallet->ImportPubKeys({pubKey.GetID()}, {{pubKey.GetID(), pubKey}} , /*key_origins=*/{}, /*add_keypool=*/false, /*internal=*/false, /*timestamp=*/1);
         assert(import_keys);
-        wallet->SetLastBlockProcessed(105, WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
+        wallet->SetLastBlockProcessed(WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Height()), WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
     }
     SyncUpWallet(wallet, node);
     return wallet;
@@ -223,7 +223,7 @@ std::shared_ptr<CWallet> SetupDescriptorsWallet(interfaces::Node& node, TestChai
     if (!wallet->AddWalletDescriptor(w_desc, provider, "", false)) assert(false);
     CTxDestination dest = GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type);
     wallet->SetAddressBook(dest, "", wallet::AddressPurpose::RECEIVE);
-    wallet->SetLastBlockProcessed(105, WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
+    wallet->SetLastBlockProcessed(WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Height()), WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
     SyncUpWallet(wallet, node);
     wallet->SetBroadcastTransactions(true);
     return wallet;
@@ -288,13 +288,14 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 
     // Send two transactions, and verify they are added to transaction list.
     TransactionTableModel* transactionTableModel = walletModel.getTransactionTableModel();
-    QCOMPARE(transactionTableModel->rowCount({}), 105);
+    // DigitalGold: one row per coinbase of the 240-block fixture plus the 5 blocks mined above
+    QCOMPARE(transactionTableModel->rowCount({}), WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Height()));
     // Blackcoin
     uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN);
     uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN);
     // Transaction table model updates on a QueuedConnection, so process events to ensure it's updated.
     qApp->processEvents();
-    QCOMPARE(transactionTableModel->rowCount({}), 107);
+    QCOMPARE(transactionTableModel->rowCount({}), WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Height()) + 2);
     QVERIFY(FindTx(*transactionTableModel, txid1).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
 
@@ -337,7 +338,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("payment_header")->text(), QString("Payment information"));
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("uri_tag")->text(), QString("URI:"));
             QString uri = receiveRequestDialog->QObject::findChild<QLabel*>("uri_content")->text();
-            QCOMPARE(uri.count("dgd:"), 2);
+            QCOMPARE(uri.count("digitalgold:"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("address_tag")->text(), QString("Address:"));
             QVERIFY(address.isEmpty());
             address = receiveRequestDialog->QObject::findChild<QLabel*>("address_content")->text();
@@ -447,7 +448,8 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
 
 void TestGUI(interfaces::Node& node)
 {
-    // Set up wallet and chain with 105 blocks (5 mature blocks for spending).
+    // Set up wallet and chain with 5 blocks on top of the fixture's (DigitalGold: 240 blocks,
+    // 10-block coinbase maturity, so most of them are mature for spending).
     TestChain100Setup test;
     for (int i = 0; i < 5; ++i) {
         test.CreateAndProcessBlock({}, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()));

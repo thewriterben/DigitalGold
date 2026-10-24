@@ -6,7 +6,7 @@
 
 from decimal import Decimal
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_equal
 
 signet_blocks = [
@@ -24,6 +24,9 @@ signet_blocks = [
 
 
 class SignetBasicTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        raise SkipTest("DigitalGold's signet does not use Bitcoin's signet blocks and challenge")
+
     def set_test_params(self):
         self.chain = "signet"
         self.num_nodes = 6

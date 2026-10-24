@@ -26,10 +26,16 @@ BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
     // be uneconomical to add and spend the output), and make sure it pays the
     // leftover input amount which would have been change to the recipient
     // instead of the miner.
-    auto check_tx = [&wallet](CAmount leftover_input_amount) {
-        CRecipient recipient{PubKeyDestination({}), 50 * COIN - leftover_input_amount, /*subtract_fee=*/true};
+    // DigitalGold: the coinbase inputs carry the regtest subsidy rather than 50 BTC
+    const CAmount coin_value{m_coinbase_txns[0]->GetValueOut()};
+    const COutPoint coin_outpoint{m_coinbase_txns[0]->GetHash(), 0};
+    auto check_tx = [&wallet, coin_value, coin_outpoint](CAmount leftover_input_amount) {
+        CRecipient recipient{PubKeyDestination({}), coin_value - leftover_input_amount, /*subtract_fee=*/true};
         constexpr int RANDOM_CHANGE_POSITION = -1;
         CCoinControl coin_control;
+        // DigitalGold: the wallet holds every mature fixture coinbase, so pin the input to the
+        // first one (upstream has a single mature coinbase to choose from).
+        coin_control.Select(coin_outpoint);
         coin_control.m_feerate.emplace(10000);
         coin_control.fOverrideFeeRate = true;
         // We need to use a change type with high cost of change so that the leftover amount will be dropped to fee instead of added as a change output
@@ -77,9 +83,12 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
     std::set<COutPoint> preset_inputs = {coins[0].outpoint, coins[1].outpoint, coins[2].outpoint};
 
     // Try to create a tx that spends more than what preset inputs + wallet selected inputs are covering for.
-    // The wallet can cover up to 200 BTC, and the tx target is 299 BTC.
+    // The wallet can cover up to its whole balance, and the tx target is 99 coins more than that.
+    // (DigitalGold: the synced wallet also holds the fixture's mature coinbases, so derive the
+    // target from the actual balance instead of upstream's 200 BTC / 299 BTC.)
+    const CAmount wallet_total{available_coins.GetTotalAmount()};
     std::vector<CRecipient> recipients{{*Assert(wallet->GetNewDestination(OutputType::BECH32, "dummy")),
-                                           /*nAmount=*/299 * COIN, /*fSubtractFeeFromAmount=*/true}};
+                                           /*nAmount=*/wallet_total + 99 * COIN, /*fSubtractFeeFromAmount=*/true}};
     CCoinControl coin_control;
     coin_control.m_allow_other_inputs = true;
     for (const auto& outpoint : preset_inputs) {

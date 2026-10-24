@@ -92,7 +92,7 @@ P2P_VERSION = 70016
 # Blackcoin
 # NODE_NETWORK | NODE_WITNESS
 '''
-P2P_SERVICES = NODE_WITNESS
+P2P_SERVICES = NODE_NETWORK | NODE_WITNESS
 # The P2P user agent string that this test framework sends in its `version` message
 P2P_SUBVERSION = "/python-p2p-tester:0.0.3/"
 # Value for relay that this test framework sends in its `version` message
@@ -144,10 +144,11 @@ MESSAGEMAP = {
     b"wtxidrelay": msg_wtxidrelay,
 }
 
+# pchMessageStart in src/kernel/chainparams.cpp
 MAGIC_BYTES = {
-    "mainnet": b"\xf6\xc7\xa8\xd9",   # mainnet
-    "testnet": b"\x06\x27\x18\x09",   # testnet
-    "regtest": b"\xc1\xd2\xa4\xb8",   # regtest
+    "mainnet": b"\xf7\xc8\xa9\xda",   # mainnet
+    "testnet": b"\x07\x28\x19\x0a",   # testnet
+    "regtest": b"\xc2\xd3\xa5\xb9",   # regtest
     "signet": b"\x0a\x03\xcf\x40",    # signet
 }
 

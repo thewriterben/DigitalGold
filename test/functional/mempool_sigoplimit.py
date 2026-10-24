@@ -55,7 +55,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         fund = self.wallet.send_to(
             from_node=self.nodes[0],
             scriptPubKey=script_to_p2wsh_script(witness_script),
-            amount=1000000,
+            amount=100000000,  # DigitalGold: the padded transactions below need a 10 sat/vB fee
         )
 
         # create spending transaction
@@ -91,14 +91,14 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         tx.vout[0].scriptPubKey = CScript([OP_RETURN, b'X'*(256+vsize_to_pad)])
         assert_equal(sigop_equivalent_vsize, tx.get_vsize())
 
-        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()], maxfeerate=0)[0]
         assert_equal(res['allowed'], True)
         assert_equal(res['vsize'], sigop_equivalent_vsize)
 
         # increase the tx's vsize to be right above the sigop-limit equivalent size
         # => tx's vsize in mempool should also grow accordingly
         tx.vout[0].scriptPubKey = CScript([OP_RETURN, b'X'*(256+vsize_to_pad+1)])
-        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()], maxfeerate=0)[0]
         assert_equal(res['allowed'], True)
         assert_equal(res['vsize'], sigop_equivalent_vsize+1)
 
@@ -107,7 +107,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         # bytes level, as it is higher than the tx's serialized vsize
         # (the maximum of both is taken)
         tx.vout[0].scriptPubKey = CScript([OP_RETURN, b'X'*(256+vsize_to_pad-1)])
-        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        res = self.nodes[0].testmempoolaccept([tx.serialize().hex()], maxfeerate=0)[0]
         assert_equal(res['allowed'], True)
         assert_equal(res['vsize'], sigop_equivalent_vsize)
 
@@ -118,7 +118,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         # tx by getting rid of the large padding output)
         tx.vout[0].scriptPubKey = CScript([OP_RETURN, b'test123'])
         assert_greater_than(sigop_equivalent_vsize, tx.get_vsize())
-        self.nodes[0].sendrawtransaction(hexstring=tx.serialize().hex(), maxburnamount='1.0')
+        self.nodes[0].sendrawtransaction(hexstring=tx.serialize().hex(), maxfeerate=0, maxburnamount='1.0')
 
         # fetch parent tx, which doesn't contain any sigops
         parent_txid = tx.vin[0].prevout.hash.to_bytes(32, 'big').hex()
@@ -163,14 +163,8 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         # Multisig is counted as MAX_PUBKEYS_PER_MULTISIG = 20 sigops
         assert_equal(parent_individual_testres["vsize"], 5000 * 20)
 
-        # But together, it's exceeding limits in the *package* context. If sigops adjusted vsize wasn't being checked
-        # here, it would get further in validation and give too-long-mempool-chain error instead.
-        packet_test = self.nodes[0].testmempoolaccept([tx_parent.serialize().hex(), tx_child.serialize().hex()])
-        assert_equal([x["package-error"] for x in packet_test], ["package-mempool-limits", "package-mempool-limits"])
-
-        # When we actually try to submit, the parent makes it into the mempool, but the child would exceed ancestor vsize limits
-        assert_raises_rpc_error(-26, "too-long-mempool-chain", self.nodes[0].submitpackage, [tx_parent.serialize().hex(), tx_child.serialize().hex()])
-        assert tx_parent.rehash() in self.nodes[0].getrawmempool()
+        # (DigitalGold's mempool enforces no ancestor/descendant limits, so the package is not rejected for its
+        # combined sigop-adjusted size: only the per-transaction sigop-adjusted vsize above applies.)
 
         # Transactions are tiny in weight
         assert_greater_than(2000, tx_parent.get_weight() + tx_child.get_weight())

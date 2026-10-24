@@ -46,11 +46,11 @@ from .script_util import (
 from .util import assert_equal
 
 WITNESS_SCALE_FACTOR = 4
-MAX_BLOCK_SIGOPS = 20000
+MAX_BLOCK_SIGOPS = 40000  # DigitalGold: MAX_BLOCK_SIGOPS_COST / WITNESS_SCALE_FACTOR
 MAX_BLOCK_SIGOPS_WEIGHT = MAX_BLOCK_SIGOPS * WITNESS_SCALE_FACTOR
 
 # Genesis block time (regtest)
-TIME_GENESIS_BLOCK = 1715187700
+TIME_GENESIS_BLOCK = 1731231400  # DigitalGold regtest genesis (src/kernel/chainparams.cpp)
 
 MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60
 
@@ -135,8 +135,13 @@ def create_coinbase(height, pubkey=None, *, script_pubkey=None, extra_output_scr
     coinbaseoutput = CTxOut()
     coinbaseoutput.nValue = nValue * COIN
     if nValue == 50:
-        halvings = int(height / 150)  # regtest
-        coinbaseoutput.nValue >>= halvings
+        # the default pays DigitalGold's regtest proof-of-work subsidy (GetProofOfWorkSubsidy)
+        if height <= 500:
+            coinbaseoutput.nValue = 1000 * COIN
+        elif height <= 1500:
+            coinbaseoutput.nValue = 20500 * COIN
+        else:
+            coinbaseoutput.nValue = COIN // 80
         coinbaseoutput.nValue += fees
     if pubkey is not None:
         coinbaseoutput.scriptPubKey = key_to_p2pk_script(pubkey)

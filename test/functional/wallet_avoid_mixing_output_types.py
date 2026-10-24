@@ -27,15 +27,15 @@ but still know when to expect mixing due to the wallet being close to empty.
 
 """
 
+from decimal import Decimal
 import random
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.blocktools import COINBASE_MATURITY
 
 ADDRESS_TYPES = [
-    "bech32m",
+    # no "bech32m": Taproot is not active on DigitalGold's regtest
     "bech32",
-    "p2sh-segwit",
-    "legacy",
+    "legacy",  # DigitalGold refuses p2sh-segwit addresses
 ]
 
 
@@ -119,7 +119,7 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
                 "-txindex",
             ],
             [
-                "-addresstype=p2sh-segwit",
+                "-addresstype=legacy",  # DigitalGold refuses p2sh-segwit addresses
                 "-whitelist=noban@127.0.0.1",
                 "-txindex",
             ],
@@ -151,16 +151,16 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             A.sendtoaddress(B.getnewaddress(address_type="legacy"), v)
 
         for v in generate_payment_values(3, 10):
-            self.log.debug(f"Making payment of {v} BTC to p2sh")
-            A.sendtoaddress(B.getnewaddress(address_type="p2sh-segwit"), v)
+            self.log.debug(f"Making payment of {v} DGD to legacy")  # DigitalGold refuses p2sh-segwit addresses
+            A.sendtoaddress(B.getnewaddress(address_type="legacy"), v)
 
         for v in generate_payment_values(3, 10):
             self.log.debug(f"Making payment of {v} BTC to bech32")
             A.sendtoaddress(B.getnewaddress(address_type="bech32"), v)
 
         for v in generate_payment_values(3, 10):
-            self.log.debug(f"Making payment of {v} BTC to bech32m")
-            A.sendtoaddress(B.getnewaddress(address_type="bech32m"), v)
+            self.log.debug(f"Making payment of {v} DGD to bech32")  # instead of bech32m (Taproot is not active on DigitalGold)
+            A.sendtoaddress(B.getnewaddress(address_type="bech32"), v)
 
         self.generate(A, 1)
 
@@ -172,7 +172,22 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             self.generate(A, 1)
             assert is_same_type(B, tx)
 
-        tx = self.make_payment(A, B, 30.99, random.choice(ADDRESS_TYPES))
+        # (DigitalGold: with two address types instead of four, the change from the payments above can move
+        # nearly all of B's coins into one type, so the fixed 30.99 payment could be funded from a single type.
+        # Top up the emptier type if needed and pay just below B's total, which no single type can cover.)
+        def type_balances():
+            balances = {"legacy": Decimal(0), "bech32": Decimal(0)}
+            for utxo in B.listunspent():
+                balances["legacy" if is_legacy_address(B, utxo["address"]) else "bech32"] += utxo["amount"]
+            return balances
+        balances = type_balances()
+        if min(balances.values()) < 1:
+            A.sendtoaddress(B.getnewaddress(address_type=min(balances, key=balances.get)), 5)
+            self.generate(A, 1)
+            balances = type_balances()
+        amount = sum(balances.values()) - Decimal("0.01")
+        assert max(balances.values()) < amount
+        tx = self.make_payment(A, B, amount, random.choice(ADDRESS_TYPES))
         assert not is_same_type(B, tx)
 
 

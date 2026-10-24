@@ -63,6 +63,9 @@ from test_framework.util import (
 )
 
 
+NUM_BLOCKS = 2700  # DigitalGold's MIN_BLOCKS_TO_KEEP: the last block is exactly one too far ahead
+
+
 class AcceptBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
@@ -159,11 +162,11 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.nodes[0].getblock(block_h3.hash)
         self.log.info("Unrequested more-work block accepted")
 
-        # 4c. Now mine 288 more blocks and deliver; all should be processed but
-        # the last (height-too-high) on node (as long as it is not missing any headers)
+        # 4c. Now mine MIN_BLOCKS_TO_KEEP (2700 on DigitalGold) more blocks and deliver; all should be
+        # processed but the last (height-too-high) on node (as long as it is not missing any headers)
         tip = block_h3
         all_blocks = []
-        for i in range(288):
+        for i in range(NUM_BLOCKS):
             next_block = create_block(tip.sha256, create_coinbase(i + 4), tip.nTime+1)
             next_block.solve()
             all_blocks.append(next_block)
@@ -182,11 +185,11 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.nodes[0].getblock(all_blocks[1].hash)
 
         # Now send the blocks in all_blocks
-        for i in range(288):
+        for i in range(NUM_BLOCKS):
             test_node.send_message(msg_block(all_blocks[i]))
         test_node.sync_with_ping()
 
-        # Blocks 1-287 should be accepted, block 288 should be ignored because it's too far ahead
+        # All blocks but the last should be accepted, the last one should be ignored because it's too far ahead
         for x in all_blocks[:-1]:
             self.nodes[0].getblock(x.hash)
         assert_raises_rpc_error(-1, "Block not found on disk", self.nodes[0].getblock, all_blocks[-1].hash)
@@ -225,23 +228,25 @@ class AcceptBlockTest(BitcoinTestFramework):
 
         # 7. Send the missing block for the third time (now it is requested)
         test_node.send_and_ping(msg_block(block_h1f))
-        assert_equal(self.nodes[0].getblockcount(), 290)
-        self.nodes[0].getblock(all_blocks[286].hash)
-        assert_equal(self.nodes[0].getbestblockhash(), all_blocks[286].hash)
-        assert_raises_rpc_error(-1, "Block not found on disk", self.nodes[0].getblock, all_blocks[287].hash)
+        assert_equal(self.nodes[0].getblockcount(), NUM_BLOCKS + 2)
+        self.nodes[0].getblock(all_blocks[NUM_BLOCKS - 2].hash)
+        assert_equal(self.nodes[0].getbestblockhash(), all_blocks[NUM_BLOCKS - 2].hash)
+        assert_raises_rpc_error(-1, "Block not found on disk", self.nodes[0].getblock, all_blocks[NUM_BLOCKS - 1].hash)
         self.log.info("Successfully reorged to longer chain")
 
         # 8. Create a chain which is invalid at a height longer than the
         # current chain, but which has more blocks on top of that
-        block_289f = create_block(all_blocks[284].sha256, create_coinbase(289), all_blocks[284].nTime+1)
+        # (DigitalGold: the fork starts two blocks below the tip at height NUM_BLOCKS + 2, as upstream's does at 290;
+        # a fork from upstream's fixed height 288 would be far below the low-work header threshold here)
+        block_289f = create_block(all_blocks[NUM_BLOCKS - 4].sha256, create_coinbase(NUM_BLOCKS + 1), all_blocks[NUM_BLOCKS - 4].nTime+1)
         block_289f.solve()
-        block_290f = create_block(block_289f.sha256, create_coinbase(290), block_289f.nTime+1)
+        block_290f = create_block(block_289f.sha256, create_coinbase(NUM_BLOCKS + 2), block_289f.nTime+1)
         block_290f.solve()
         # block_291 spends a coinbase below maturity!
         tx_to_add = create_tx_with_script(block_290f.vtx[0], 0, script_sig=b"42", amount=1)
-        block_291 = create_block(block_290f.sha256, create_coinbase(291), block_290f.nTime+1, txlist=[tx_to_add])
+        block_291 = create_block(block_290f.sha256, create_coinbase(NUM_BLOCKS + 3), block_290f.nTime+1, txlist=[tx_to_add])
         block_291.solve()
-        block_292 = create_block(block_291.sha256, create_coinbase(292), block_291.nTime+1)
+        block_292 = create_block(block_291.sha256, create_coinbase(NUM_BLOCKS + 4), block_291.nTime+1)
         block_292.solve()
 
         # Now send all the headers on the chain and enough blocks to trigger reorg
@@ -276,12 +281,12 @@ class AcceptBlockTest(BitcoinTestFramework):
         test_node = self.nodes[0].add_p2p_connection(P2PInterface())
 
         # We should have failed reorg and switched back to 290 (but have block 291)
-        assert_equal(self.nodes[0].getblockcount(), 290)
-        assert_equal(self.nodes[0].getbestblockhash(), all_blocks[286].hash)
+        assert_equal(self.nodes[0].getblockcount(), NUM_BLOCKS + 2)
+        assert_equal(self.nodes[0].getbestblockhash(), all_blocks[NUM_BLOCKS - 2].hash)
         assert_equal(self.nodes[0].getblock(block_291.hash)["confirmations"], -1)
 
         # Now send a new header on the invalid chain, indicating we're forked off, and expect to get disconnected
-        block_293 = create_block(block_292.sha256, create_coinbase(293), block_292.nTime+1)
+        block_293 = create_block(block_292.sha256, create_coinbase(NUM_BLOCKS + 5), block_292.nTime+1)
         block_293.solve()
         headers_message = msg_headers()
         headers_message.headers.append(CBlockHeader(block_293))

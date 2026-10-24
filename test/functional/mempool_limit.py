@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.p2p import P2PTxInvStore
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_equal,
     assert_fee_amount,
@@ -25,6 +25,9 @@ from test_framework.wallet import (
 
 
 class MempoolLimitTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        raise SkipTest("DigitalGold's mempool has no dynamic minimum fee, so nothing is evicted on size limits")
+
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1

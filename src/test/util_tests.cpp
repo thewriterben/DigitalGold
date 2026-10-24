@@ -371,7 +371,8 @@ BOOST_AUTO_TEST_CASE(util_ParseMoney)
     BOOST_CHECK_EQUAL(ParseMoney(" 0.00000001").value(), COIN/100000000);
 
     // Parsing amount that cannot be represented should fail
-    BOOST_CHECK(!ParseMoney("100000000.00"));
+    // (DigitalGold's MAX_MONEY spans the whole int64 range, so use a value beyond it)
+    BOOST_CHECK(!ParseMoney("92233720369.00"));
     BOOST_CHECK(!ParseMoney("0.000000001"));
 
     // Parsing empty string should fail
@@ -1279,7 +1280,7 @@ BOOST_AUTO_TEST_CASE(test_ToUpper)
 BOOST_AUTO_TEST_CASE(test_Capitalize)
 {
     BOOST_CHECK_EQUAL(Capitalize(""), "");
-    BOOST_CHECK_EQUAL(Capitalize("dgd"), "DGD");
+    BOOST_CHECK_EQUAL(Capitalize("dgd"), "Dgd");
     BOOST_CHECK_EQUAL(Capitalize("\x00\xfe\xff"), "\x00\xfe\xff");
 }
 
@@ -1584,7 +1585,7 @@ BOOST_AUTO_TEST_CASE(message_sign)
 {
     const std::array<unsigned char, 32> privkey_bytes = {
         // just some random data
-        // derived address from this private key: 15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs
+        // derived address from this private key: GN3MNNxvQfsrQyTE4ESQMFyoeARB8F6LWx
         0xD9, 0x7F, 0x51, 0x08, 0xF1, 0x1C, 0xDA, 0x6E,
         0xEE, 0xBA, 0xAA, 0x42, 0x0F, 0xEF, 0x07, 0x26,
         0xB1, 0xF8, 0x98, 0x06, 0x0B, 0x98, 0x48, 0x9F,
@@ -1593,8 +1594,10 @@ BOOST_AUTO_TEST_CASE(message_sign)
 
     const std::string message = "Trust no one";
 
+    // Signature over MessageHash(message), which commits to DigitalGold's MESSAGE_MAGIC
+    // (regenerated for this chain; the address-recovery vectors below likewise).
     const std::string expected_signature =
-        "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=";
+        "H9uT9B2LyACiyyNuTlZNc58JXY5ujx9Y309Gi/7SxCKOeDwTgn6oKv6nHC/sYjARjn+Hw6l35E6qrk1Tr2L2uuY=";
 
     CKey privkey;
     std::string generated_signature;
@@ -1627,42 +1630,42 @@ BOOST_AUTO_TEST_CASE(message_verify)
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "3B5fQsEXEaV8v6U3ejYc8XaKXAkyQj2MjV",
+            "gCB9zrf2ZB7k9yJ1uLBvk4chRaTkrcVide",
             "signature should be irrelevant",
             "message too"),
         MessageVerificationResult::ERR_ADDRESS_NO_KEY);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "1KqbBpLy5FARmTPD4VZnDDpYjkUvkr82Pm",
+            "GcgWbwfv46miqvgVzSDtdzASevGmmhtTQC",
             "invalid signature, not in base64 encoding",
             "message should be irrelevant"),
         MessageVerificationResult::ERR_MALFORMED_SIGNATURE);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "1KqbBpLy5FARmTPD4VZnDDpYjkUvkr82Pm",
+            "GcgWbwfv46miqvgVzSDtdzASevGmmhtTQC",
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "message should be irrelevant"),
         MessageVerificationResult::ERR_PUBKEY_NOT_RECOVERED);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs",
-            "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=",
+            "GN3MNNxvQfsrQyTE4ESQMFyoeARB8F6LWx",
+            "H9uT9B2LyACiyyNuTlZNc58JXY5ujx9Y309Gi/7SxCKOeDwTgn6oKv6nHC/sYjARjn+Hw6l35E6qrk1Tr2L2uuY=",
             "I never signed this"),
         MessageVerificationResult::ERR_NOT_SIGNED);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs",
-            "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=",
+            "GN3MNNxvQfsrQyTE4ESQMFyoeARB8F6LWx",
+            "H9uT9B2LyACiyyNuTlZNc58JXY5ujx9Y309Gi/7SxCKOeDwTgn6oKv6nHC/sYjARjn+Hw6l35E6qrk1Tr2L2uuY=",
             "Trust no one"),
         MessageVerificationResult::OK);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "11canuhp9X2NocwCq7xNrQYTmUgZAnLK3",
+            "GLTKMH1mAPBE2CuHgLdGuk3xJVeptbEy5x",
             "IIcaIENoYW5jZWxsb3Igb24gYnJpbmsgb2Ygc2Vjb25kIGJhaWxvdXQgZm9yIGJhbmtzIAaHRtbCeDZINyavx14=",
             "Trust me"),
         MessageVerificationResult::OK);

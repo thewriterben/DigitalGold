@@ -62,20 +62,16 @@ class WalletDescriptorTest(BitcoinTestFramework):
         assert addr_info['desc'].startswith('pkh(')
         assert_equal(addr_info['hdkeypath'], 'm/44h/1h/0h/0/0')
 
-        addr = self.nodes[0].getnewaddress("", "p2sh-segwit")
-        addr_info = self.nodes[0].getaddressinfo(addr)
-        assert addr_info['desc'].startswith('sh(wpkh(')
-        assert_equal(addr_info['hdkeypath'], 'm/49h/1h/0h/0/0')
+        # DigitalGold's wallet refuses p2sh-segwit addresses
+        assert_raises_rpc_error(-8, "P2SH_SEGWIT addresses are not welcome", self.nodes[0].getnewaddress, "", "p2sh-segwit")
 
         addr = self.nodes[0].getnewaddress("", "bech32")
         addr_info = self.nodes[0].getaddressinfo(addr)
         assert addr_info['desc'].startswith('wpkh(')
         assert_equal(addr_info['hdkeypath'], 'm/84h/1h/0h/0/0')
 
-        addr = self.nodes[0].getnewaddress("", "bech32m")
-        addr_info = self.nodes[0].getaddressinfo(addr)
-        assert addr_info['desc'].startswith('tr(')
-        assert_equal(addr_info['hdkeypath'], 'm/86h/1h/0h/0/0')
+        # Taproot is not active on DigitalGold's regtest
+        assert_raises_rpc_error(-8, "Taproot addresses (bech32m) are not supported yet", self.nodes[0].getnewaddress, "", "bech32m")
 
         # Check that getrawchangeaddress works
         addr = self.nodes[0].getrawchangeaddress("legacy")
@@ -83,6 +79,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
         assert addr_info['desc'].startswith('pkh(')
         assert_equal(addr_info['hdkeypath'], 'm/44h/1h/0h/1/0')
 
+        # (only getnewaddress refuses p2sh-segwit; change may still be p2sh-segwit)
         addr = self.nodes[0].getrawchangeaddress("p2sh-segwit")
         addr_info = self.nodes[0].getaddressinfo(addr)
         assert addr_info['desc'].startswith('sh(wpkh(')
@@ -93,6 +90,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
         assert addr_info['desc'].startswith('wpkh(')
         assert_equal(addr_info['hdkeypath'], 'm/84h/1h/0h/1/0')
 
+        # (likewise, getrawchangeaddress is not gated for bech32m)
         addr = self.nodes[0].getrawchangeaddress("bech32m")
         addr_info = self.nodes[0].getaddressinfo(addr)
         assert addr_info['desc'].startswith('tr(')
@@ -177,13 +175,9 @@ class WalletDescriptorTest(BitcoinTestFramework):
         imp_rpc = self.nodes[0].get_wallet_rpc('desc_import')
 
         addr_types = [('legacy', False, 'pkh(', '44h/1h/0h', -13),
-                      ('p2sh-segwit', False, 'sh(wpkh(', '49h/1h/0h', -14),
                       ('bech32', False, 'wpkh(', '84h/1h/0h', -13),
-                      ('bech32m', False, 'tr(', '86h/1h/0h', -13),
                       ('legacy', True, 'pkh(', '44h/1h/0h', -13),
-                      ('p2sh-segwit', True, 'sh(wpkh(', '49h/1h/0h', -14),
-                      ('bech32', True, 'wpkh(', '84h/1h/0h', -13),
-                      ('bech32m', True, 'tr(', '86h/1h/0h', -13)]
+                      ('bech32', True, 'wpkh(', '84h/1h/0h', -13)]  # (no p2sh-segwit / bech32m on DigitalGold)
 
         for addr_type, internal, desc_prefix, deriv_path, int_idx in addr_types:
             int_str = 'internal' if internal else 'external'

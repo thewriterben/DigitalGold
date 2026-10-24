@@ -183,8 +183,11 @@ class OrphanHandlingTest(BitcoinTestFramework):
         child_nonsegwit = self.wallet_nonsegwit.create_self_transfer_multi(
             utxos_to_spend=[parent_other["new_utxo"], parent_low_fee_nonsegwit["new_utxo"]])
 
-        # Relay the parent. It should be rejected because it pays 0 fees.
-        self.relay_transaction(peer1, parent_low_fee_nonsegwit["tx"])
+        # Relay the parent. It should be rejected because it pays 0 fees. (On DigitalGold that is a
+        # consensus failure, so the relaying peer is disconnected; reconnect it.)
+        peer1.send_message(msg_tx(parent_low_fee_nonsegwit["tx"]))
+        peer1.wait_for_disconnect()
+        peer1 = node.add_p2p_connection(PeerTxRelayer())
         assert parent_low_fee_nonsegwit["txid"] not in node.getrawmempool()
 
         # Relay the child. It should not be accepted because it has missing inputs.
@@ -199,22 +202,8 @@ class OrphanHandlingTest(BitcoinTestFramework):
         peer2.assert_never_requested(int(parent_other["txid"], 16))
         peer2.assert_never_requested(int(parent_low_fee_nonsegwit["txid"], 16))
 
-        self.log.info("Test orphan handling when a segwit parent was invalid but may be retried with another witness")
-        parent_low_fee = self.wallet.create_self_transfer(fee_rate=0)
-        child_low_fee = self.wallet.create_self_transfer(utxo_to_spend=parent_low_fee["new_utxo"])
-
-        # Relay the low fee parent. It should not be accepted.
-        self.relay_transaction(peer1, parent_low_fee["tx"])
-        assert parent_low_fee["txid"] not in node.getrawmempool()
-
-        # Relay the child. It should not be accepted because it has missing inputs.
-        self.relay_transaction(peer2, child_low_fee["tx"])
-        assert child_low_fee["txid"] not in node.getrawmempool()
-
-        # The parent should be requested because even though the txid commits to the fee, it doesn't
-        # commit to the feerate. Delayed because it's by txid and this is not a preferred relay peer.
-        self.nodes[0].bumpmocktime(NONPREF_PEER_TX_DELAY + TXID_RELAY_DELAY)
-        peer2.wait_for_getdata([int(parent_low_fee["tx"].rehash(), 16)])
+        # (a low-fee segwit parent cannot be retried with another witness on DigitalGold, since
+        # paying less than the minimum fee is a consensus failure that rejects the txid)
 
         self.log.info("Test orphan handling when a parent was previously downloaded with witness stripped")
         parent_normal = self.wallet.create_self_transfer()
@@ -376,8 +365,11 @@ class OrphanHandlingTest(BitcoinTestFramework):
         assert child["txid"] != child["tx"].getwtxid()
         assert grandchild["txid"] != grandchild["tx"].getwtxid()
 
-        # Relay the parent. It should be rejected because it pays 0 fees.
-        self.relay_transaction(peer1, parent_low_fee_nonsegwit["tx"])
+        # Relay the parent. It should be rejected because it pays 0 fees. (On DigitalGold that is a
+        # consensus failure, so the relaying peer is disconnected; reconnect it.)
+        peer1.send_message(msg_tx(parent_low_fee_nonsegwit["tx"]))
+        peer1.wait_for_disconnect()
+        peer1 = node.add_p2p_connection(PeerTxRelayer())
 
         # Relay the child. It should be rejected for having missing parents, and this rejection is
         # cached by txid and wtxid.

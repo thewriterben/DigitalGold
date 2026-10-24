@@ -26,6 +26,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+
 static CService ip(uint32_t i)
 {
     struct in_addr s;
@@ -153,7 +155,11 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
 
     const auto time_init{GetTime<std::chrono::seconds>()};
     SetMockTime(time_init);
-    const auto time_later{time_init + 3 * std::chrono::seconds{m_node.chainman->GetConsensus().nTargetSpacing} + 1s};
+    // The tip counts as stale after 3 * nTargetSpacing (TipMayBeStale), but
+    // CheckForStaleTipAndEvictPeers() re-evaluates staleness only every
+    // STALE_CHECK_INTERVAL (10 min), which is the larger of the two with
+    // DigitalGold's 64 second block spacing.
+    const auto time_later{time_init + std::max(3 * std::chrono::seconds{m_node.chainman->GetConsensus().nTargetSpacing} + 1s, std::chrono::seconds{10min} + 1s)};
     connman->Init(options);
     std::vector<CNode *> vNodes;
 

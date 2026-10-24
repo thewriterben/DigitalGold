@@ -73,7 +73,7 @@ def read_dump(file_name, addrs, script_addrs, hd_master_addr_old):
                         elif addr.startswith('2'):
                             # P2SH-segwit address
                             found_p2sh_segwit_addr += 1
-                        elif addr.startswith('bcrt1'):
+                        elif addr.startswith('dgrt1'):
                             found_bech32_addr += 1
                         break
                     elif keytype == "change=1":
@@ -120,7 +120,7 @@ class WalletDumpTest(BitcoinTestFramework):
         # - 10 bech32
         test_addr_count = 10
         addrs = []
-        for address_type in ['legacy', 'p2sh-segwit', 'bech32']:
+        for address_type in ['legacy', 'bech32']:  # DigitalGold refuses p2sh-segwit addresses
             for _ in range(test_addr_count):
                 addr = self.nodes[0].getnewaddress(address_type=address_type)
                 vaddr = self.nodes[0].getaddressinfo(addr)  # required to get hd keypath
@@ -165,7 +165,7 @@ class WalletDumpTest(BitcoinTestFramework):
         assert_equal(dump_best_block_1, next(c for c in found_comments if c.startswith('# * Best block')))
         assert_equal(dump_best_block_2, next(c for c in found_comments if c.startswith('#   mined on')))
         assert_equal(found_legacy_addr, test_addr_count)  # all keys must be in the dump
-        assert_equal(found_p2sh_segwit_addr, test_addr_count)  # all keys must be in the dump
+        assert_equal(found_p2sh_segwit_addr, 0)  # DigitalGold refuses p2sh-segwit addresses, so none were created
         assert_equal(found_bech32_addr, test_addr_count)  # all keys must be in the dump
         assert_equal(found_script_addr, 1)  # all scripts must be in the dump
         assert_equal(found_addr_chg, 0)  # 0 blocks where mined
@@ -185,7 +185,7 @@ class WalletDumpTest(BitcoinTestFramework):
             assert_equal(dump_best_block_1, next(c for c in found_comments if c.startswith('# * Best block')))
             assert_equal(dump_best_block_2, next(c for c in found_comments if c.startswith('#   mined on')))
             assert_equal(found_legacy_addr, test_addr_count)  # all keys must be in the dump
-            assert_equal(found_p2sh_segwit_addr, test_addr_count)  # all keys must be in the dump
+            assert_equal(found_p2sh_segwit_addr, 0)  # DigitalGold refuses p2sh-segwit addresses, so none were created
             assert_equal(found_bech32_addr, test_addr_count)  # all keys must be in the dump
             assert_equal(found_script_addr, 1)
             assert_equal(found_addr_chg, 90 * 2)  # old reserve keys are marked as change now

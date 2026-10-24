@@ -128,7 +128,8 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK(result.last_failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 100 * COIN);
+        // DigitalGold: both new coinbases, whose value is the chain's subsidy rather than 50 BTC
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, m_coinbase_txns[m_coinbase_txns.size() - 2]->GetValueOut() + m_coinbase_txns.back()->GetValueOut());
 
         {
             CBlockLocator locator;
@@ -138,7 +139,9 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
     }
 
     // Verify ScanForWalletTransactions only picks transactions in the new block
-    // file.
+    // file. DigitalGold has no block pruning (the prune steps in this test are
+    // disabled), so the old block file is still readable and both coinbases are
+    // found; upstream expects FAILURE at oldTip and only the new coinbase.
     {
         CWallet wallet(m_node.chain.get(), "", CreateMockableWalletDatabase());
         {
@@ -151,11 +154,11 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         WalletRescanReserver reserver(wallet);
         reserver.reserve();
         CWallet::ScanResult result = wallet.ScanForWalletTransactions(/*start_block=*/oldTip->GetBlockHash(), /*start_height=*/oldTip->nHeight, /*max_height=*/{}, reserver, /*fUpdate=*/false, /*save_progress=*/false);
-        BOOST_CHECK_EQUAL(result.status, CWallet::ScanResult::FAILURE);
-        BOOST_CHECK_EQUAL(result.last_failed_block, oldTip->GetBlockHash());
+        BOOST_CHECK_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+        BOOST_CHECK(result.last_failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 50 * COIN);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, m_coinbase_txns[m_coinbase_txns.size() - 2]->GetValueOut() + m_coinbase_txns.back()->GetValueOut());
     }
 
     // Verify ScanForWalletTransactions scans no blocks.
@@ -171,11 +174,13 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         WalletRescanReserver reserver(wallet);
         reserver.reserve();
         CWallet::ScanResult result = wallet.ScanForWalletTransactions(/*start_block=*/oldTip->GetBlockHash(), /*start_height=*/oldTip->nHeight, /*max_height=*/{}, reserver, /*fUpdate=*/false, /*save_progress=*/false);
-        BOOST_CHECK_EQUAL(result.status, CWallet::ScanResult::FAILURE);
-        BOOST_CHECK_EQUAL(result.last_failed_block, newTip->GetBlockHash());
-        BOOST_CHECK(result.last_scanned_block.IsNull());
-        BOOST_CHECK(!result.last_scanned_height);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 0);
+        // DigitalGold: nothing is pruned, so this scan succeeds too (upstream: FAILURE at newTip,
+        // nothing scanned, no immature balance).
+        BOOST_CHECK_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+        BOOST_CHECK(result.last_failed_block.IsNull());
+        BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
+        BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, m_coinbase_txns[m_coinbase_txns.size() - 2]->GetValueOut() + m_coinbase_txns.back()->GetValueOut());
     }
 }
 
@@ -199,9 +204,8 @@ BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup)
     m_node.chainman->m_blockman.UnlinkPrunedFiles({file_number});
     */
 
-    // Verify importmulti RPC returns failure for a key whose creation time is
-    // before the missing block, and success for a key whose creation time is
-    // after.
+    // Verify importmulti RPC rescans for a key whose creation time is before the
+    // (upstream: missing) block, and for a key whose creation time is after.
     {
         const std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockableWalletDatabase());
         wallet->SetupLegacyScriptPubKeyMan();
@@ -231,15 +235,10 @@ BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup)
         request.params.push_back(keys);
 
         UniValue response = importmulti().HandleRequest(request);
-        BOOST_CHECK_EQUAL(response.write(),
-            strprintf("[{\"success\":false,\"error\":{\"code\":-1,\"message\":\"Rescan failed for key with creation "
-                      "timestamp %d. There was an error reading a block from time %d, which is after or within %d "
-                      "seconds of key creation, and could contain transactions pertaining to the key. As a result, "
-                      "transactions and coins using this key may not appear in the wallet. This error could be caused "
-                      "by pruning or data corruption (see bitcoind log for details) and could be dealt with by "
-                      "downloading and rescanning the relevant blocks (see -reindex option and rescanblockchain "
-                      "RPC).\"}},{\"success\":true}]",
-                              0, oldTip->GetBlockTimeMax(), TIMESTAMP_WINDOW));
+        // DigitalGold has no block pruning (the prune step above is disabled), so the block the
+        // first key's rescan needs is still available and both imports succeed. Upstream expects
+        // the first import to fail with "Rescan failed for key with creation timestamp 0 ...".
+        BOOST_CHECK_EQUAL(response.write(), "[{\"success\":true},{\"success\":true}]");
         RemoveWallet(context, wallet, /* load_on_start= */ std::nullopt);
     }
 }
@@ -309,10 +308,10 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup)
         RemoveWallet(context, wallet, /* load_on_start= */ std::nullopt);
 
         BOOST_CHECK_EQUAL(wallet->mapWallet.size(), 3U);
-        BOOST_CHECK_EQUAL(m_coinbase_txns.size(), 103U);
+        BOOST_CHECK_EQUAL(m_coinbase_txns.size(), 240U + 3U); // DigitalGold: 240-block fixture
         for (size_t i = 0; i < m_coinbase_txns.size(); ++i) {
             bool found = wallet->GetWalletTx(m_coinbase_txns[i]->GetHash());
-            bool expected = i >= 100;
+            bool expected = i + 3 >= m_coinbase_txns.size();
             BOOST_CHECK_EQUAL(found, expected);
         }
     }
@@ -344,7 +343,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup)
     // credit amount is calculated.
     wtx.MarkDirty();
     AddKey(wallet, coinbaseKey);
-    BOOST_CHECK_EQUAL(CachedTxGetImmatureCredit(wallet, wtx, ISMINE_SPENDABLE), 50*COIN);
+    BOOST_CHECK_EQUAL(CachedTxGetImmatureCredit(wallet, wtx, ISMINE_SPENDABLE), m_coinbase_txns.back()->GetValueOut()); // DigitalGold: the regtest subsidy, not 50 BTC
 }
 
 static int64_t AddTx(ChainstateManager& chainman, CWallet& wallet, uint32_t lockTime, int64_t mockTime, int64_t blockTime)
@@ -532,9 +531,19 @@ class ListCoinsTestingSetup : public TestChain100Setup
 public:
     ListCoinsTestingSetup()
     {
-        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-        wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey);
+        // DigitalGold: the fixture's 240 coinbases all belong to coinbaseKey, so mine
+        // nCoinbaseMaturity + 1 blocks to a fresh key instead. The wallet then owns exactly
+        // one mature coin, as upstream's does, and (like upstream) one more coinbase matures
+        // with every block AddTx() mines.
+        wallet_key.MakeNewKey(true);
+        for (int i = 0; i < Params().GetConsensus().nCoinbaseMaturity + 1; ++i) {
+            const CBlock block{CreateAndProcessBlock({}, GetScriptForRawPubKey(wallet_key.GetPubKey()))};
+            if (i == 0) wallet_coinbase_value = block.vtx[0]->GetValueOut();
+        }
+        wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), wallet_key);
     }
+    CKey wallet_key;
+    CAmount wallet_coinbase_value{0};
 
     ~ListCoinsTestingSetup()
     {
@@ -548,7 +557,7 @@ public:
         {
             constexpr int RANDOM_CHANGE_POSITION = -1;
             auto res = CreateTransaction(*wallet, {recipient}, RANDOM_CHANGE_POSITION, dummy);
-            BOOST_CHECK(res);
+            BOOST_REQUIRE_MESSAGE(res, util::ErrorString(res).original);
             tx = res->tx;
         }
         wallet->CommitTransaction(tx, {}, {});
@@ -557,7 +566,7 @@ public:
             LOCK(wallet->cs_wallet);
             blocktx = CMutableTransaction(*wallet->mapWallet.at(tx->GetHash()).tx);
         }
-        CreateAndProcessBlock({CMutableTransaction(blocktx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        CreateAndProcessBlock({CMutableTransaction(blocktx)}, GetScriptForRawPubKey(wallet_key.GetPubKey()));
 
         LOCK(wallet->cs_wallet);
         LOCK(Assert(m_node.chainman)->GetMutex());
@@ -573,9 +582,9 @@ public:
 
 BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
 {
-    std::string coinbaseAddress = coinbaseKey.GetPubKey().GetID().ToString();
+    std::string coinbaseAddress = wallet_key.GetPubKey().GetID().ToString();
 
-    // Confirm ListCoins initially returns 1 coin grouped under coinbaseKey
+    // Confirm ListCoins initially returns 1 coin grouped under the wallet key's
     // address.
     std::map<CTxDestination, std::vector<COutput>> list;
     {
@@ -586,8 +595,9 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     BOOST_CHECK_EQUAL(std::get<PKHash>(list.begin()->first).ToString(), coinbaseAddress);
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
 
-    // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(50 * COIN, WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
+    // Check initial balance from one mature coinbase transaction (DigitalGold: the regtest
+    // subsidy rather than 50 BTC).
+    BOOST_CHECK_EQUAL(wallet_coinbase_value, WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the

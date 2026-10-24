@@ -65,7 +65,7 @@ class RPCPackagesTest(BitcoinTestFramework):
         self.independent_txns_hex = []
         self.independent_txns_testres = []
         for _ in range(3):
-            tx_hex = self.wallet.create_self_transfer(fee_rate=Decimal("0.0001"))["hex"]
+            tx_hex = self.wallet.create_self_transfer(fee_rate=DEFAULT_FEE)["hex"]
             testres = self.nodes[0].testmempoolaccept([tx_hex])
             assert testres[0]["allowed"]
             self.independent_txns_hex.append(tx_hex)
@@ -193,7 +193,7 @@ class RPCPackagesTest(BitcoinTestFramework):
                 parent_coins.append(parent_tx["new_utxo"])
                 package_hex.append(parent_tx["hex"])
 
-            child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=parent_coins, fee_per_output=2000)
+            child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=parent_coins)  # default fee covers DigitalGold's minimum
             for _ in range(10):
                 random.shuffle(package_hex)
                 testres_multiple = node.testmempoolaccept(rawtxs=package_hex + [child_tx['hex']])
@@ -256,14 +256,14 @@ class RPCPackagesTest(BitcoinTestFramework):
             {"txid": replacement_tx["txid"], "wtxid": replacement_tx["wtxid"], "package-error": "conflict-in-package"}
         ])
 
-        self.log.info("Test that packages cannot conflict with mempool transactions, even if a valid BIP125 RBF")
-        # This transaction is a valid BIP125 replace-by-fee
+        self.log.info("Test that packages cannot conflict with mempool transactions (DigitalGold has no replace-by-fee at all)")
         self.wallet.sendrawtransaction(from_node=node, tx_hex=replaceable_tx["hex"])
         testres_rbf_single = node.testmempoolaccept([replacement_tx["hex"]])
-        assert testres_rbf_single[0]["allowed"]
+        assert not testres_rbf_single[0]["allowed"]
+        assert_equal(testres_rbf_single[0]["reject-reason"], "txn-mempool-conflict")
         testres_rbf_package = self.independent_txns_testres_blank + [{
             "txid": replacement_tx["txid"], "wtxid": replacement_tx["wtxid"], "allowed": False,
-            "reject-reason": "bip125-replacement-disallowed"
+            "reject-reason": "txn-mempool-conflict"
         }]
         self.assert_testres_equal(self.independent_txns_hex + [replacement_tx["hex"]], testres_rbf_package)
 
@@ -297,7 +297,7 @@ class RPCPackagesTest(BitcoinTestFramework):
             if partial_submit and random.choice([True, False]):
                 node.sendrawtransaction(parent_tx["hex"])
                 presubmitted_wtxids.add(parent_tx["wtxid"])
-        child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=[tx["new_utxo"] for tx in package_txns], fee_per_output=10000) #DEFAULT_FEE
+        child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=[tx["new_utxo"] for tx in package_txns], fee_per_output=100000)  # DEFAULT_FEE
         package_txns.append(child_tx)
 
         testmempoolaccept_result = node.testmempoolaccept(rawtxs=[tx["hex"] for tx in package_txns])

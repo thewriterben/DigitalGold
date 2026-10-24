@@ -69,7 +69,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         self.log.info("Test merkle root malleability.")
 
         tx1 = create_tx_with_script(block1.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
-        tx2 = create_tx_with_script(tx1, 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
+        tx2 = create_tx_with_script(tx1, 0, script_sig=bytes([OP_TRUE]), amount=49 * COIN)  # leave a fee (DigitalGold requires one)
         block2 = create_block(tip, create_coinbase(height), block_time, txlist=[tx1, tx2])
         block_time += 1
         block2.solve()
@@ -96,7 +96,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
 
         self.log.info("Test very broken block.")
 
-        block3 = create_block(tip, create_coinbase(height, nValue=100), block_time)
+        block3 = create_block(tip, create_coinbase(height, nValue=1001), block_time)  # above the 1000 DGD subsidy
         block_time += 1
         block3.solve()
 

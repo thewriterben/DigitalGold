@@ -11,7 +11,7 @@ import time
 
 from test_framework.key import ECKey
 from test_framework.script_util import key_to_p2wpkh_script
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_equal
 from test_framework.wallet_util import bytes_to_wif
 
@@ -36,6 +36,7 @@ class SignetMinerTest(BitcoinTestFramework):
         self.extra_args = [[f'-signetchallenge={challenge.hex()}']]
 
     def skip_test_if_missing_module(self):
+        raise SkipTest("contrib/signet/miner builds Bitcoin-format blocks, not DigitalGold's")
         self.skip_if_no_cli()
         self.skip_if_no_wallet()
         self.skip_if_no_bitcoin_util()

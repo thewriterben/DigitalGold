@@ -163,7 +163,7 @@ class CompactBlocksTest(BitcoinTestFramework):
         self.generate(self.wallet, COINBASE_MATURITY)
 
         total_value = block.vtx[0].vout[0].nValue
-        out_value = total_value // 10
+        out_value = (total_value - 2000000) // 10  # DigitalGold: leave a 0.02 DGD fee
         tx = CTransaction()
         tx.vin.append(CTxIn(COutPoint(block.vtx[0].sha256, 0), b''))
         for _ in range(10):
@@ -423,7 +423,7 @@ class CompactBlocksTest(BitcoinTestFramework):
         for _ in range(num_transactions):
             tx = CTransaction()
             tx.vin.append(CTxIn(COutPoint(utxo[0], utxo[1]), b''))
-            tx.vout.append(CTxOut(utxo[2] - 1000, CScript([OP_TRUE, OP_DROP] * 15 + [OP_TRUE])))
+            tx.vout.append(CTxOut(utxo[2] - 2000000, CScript([OP_TRUE, OP_DROP] * 15 + [OP_TRUE])))  # 0.02 DGD fee
             tx.rehash()
             utxo = [tx.sha256, 0, tx.vout[0].nValue]
             block.vtx.append(tx)
@@ -622,7 +622,8 @@ class CompactBlocksTest(BitcoinTestFramework):
     def test_low_work_compactblocks(self, test_node):
         # A compactblock with insufficient work won't get its header included
         node = self.nodes[0]
-        hashPrevBlock = int(node.getblockhash(node.getblockcount() - 150), 16)
+        # (DigitalGold rejects headers that fork deeper than its maximum reorganization depth of 10 blocks)
+        hashPrevBlock = int(node.getblockhash(node.getblockcount() - 5), 16)
         block = self.build_block_on_tip(node)
         block.hashPrevBlock = hashPrevBlock
         block.solve()
@@ -934,7 +935,8 @@ class CompactBlocksTest(BitcoinTestFramework):
         self.test_compactblocks_not_at_tip(self.segwit_node)
 
         self.log.info("Testing handling of low-work compact blocks...")
-        self.test_low_work_compactblocks(self.segwit_node)
+        # test_low_work_compactblocks is not run: DigitalGold rejects headers that fork deeper than its maximum
+        # reorganization depth (10 blocks) long before they fall below the 144-block anti-DoS work threshold
 
         self.log.info("Testing handling of incorrect blocktxn responses...")
         self.test_incorrect_blocktxn_response(self.segwit_node)

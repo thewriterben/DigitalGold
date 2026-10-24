@@ -126,7 +126,8 @@ class Variant(collections.namedtuple("Variant", "call data address_type rescan p
 
 
 # List of Variants for each way a key or address could be imported.
-IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, AddressType, Rescan, (False, True))]
+IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, AddressType, Rescan, (False, True))
+                   if variants[2] != AddressType.p2sh_segwit]  # DigitalGold's wallet refuses p2sh-segwit addresses
 
 # List of nodes to import keys to. Half the nodes will have pruning disabled,
 # half will have it enabled. Different nodes will be used for imports that are

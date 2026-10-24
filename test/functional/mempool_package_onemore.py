@@ -10,7 +10,7 @@
 from test_framework.messages import (
     DEFAULT_ANCESTOR_LIMIT,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -19,6 +19,9 @@ from test_framework.wallet import MiniWallet
 
 
 class MempoolPackagesTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        raise SkipTest("DigitalGold's mempool does not enforce ancestor/descendant limits")
+
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [["-maxorphantx=1000"]]

@@ -198,7 +198,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
         vout = find_vout_for_address(self.nodes[0], txid, address)
         self.generate(self.nodes[0], 1)
         utxo = self.nodes[0].listunspent()[0]
-        amt = Decimal(1) + utxo["amount"] - Decimal(0.00001)
+        amt = Decimal(1) + utxo["amount"] - Decimal("0.0001")
         tx = self.nodes[0].createrawtransaction(
             [{"txid": txid, "vout": vout, "sequence": 1},{"txid": utxo["txid"], "vout": utxo["vout"]}],
             [{self.nodes[0].getnewaddress(): amt}],
@@ -222,10 +222,10 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
         getcontext().prec = 8
 
         # Make sure CLTV is active
-        assert self.nodes[0].getdeploymentinfo()['deployments']['bip65']['active']
+        # (BIP65 is always active on DigitalGold and not listed as a deployment)
 
-        # Create a P2WSH script with CLTV
-        script = CScript([100, OP_CHECKLOCKTIMEVERIFY, OP_DROP])
+        # Create a P2WSH script with CLTV (height 10: DigitalGold's shorter test chain is past it)
+        script = CScript([10, OP_CHECKLOCKTIMEVERIFY, OP_DROP])
         address = script_to_p2wsh(script)
 
         # Fund that address and make the spend
@@ -233,7 +233,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
         vout = find_vout_for_address(self.nodes[0], txid, address)
         self.generate(self.nodes[0], 1)
         utxo = self.nodes[0].listunspent()[0]
-        amt = Decimal(1) + utxo["amount"] - Decimal(0.00001)
+        amt = Decimal(1) + utxo["amount"] - Decimal("0.0001")
         tx = self.nodes[0].createrawtransaction(
             [{"txid": txid, "vout": vout},{"txid": utxo["txid"], "vout": utxo["vout"]}],
             [{self.nodes[0].getnewaddress(): amt}],
@@ -253,7 +253,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
 
     def test_signing_with_missing_prevtx_info(self):
         txid = "1d1d4e24ed99057e84c3f80fd8fbec79ed9e1acee37da269356ecea000000000"
-        for type in ["bech32", "p2sh-segwit", "legacy"]:
+        for type in ["bech32", "legacy"]:  # (DigitalGold's wallet refuses p2sh-segwit addresses)
             self.log.info(f"Test signing with missing prevtx info ({type})")
             addr = self.nodes[0].getnewaddress("", type)
             addrinfo = self.nodes[0].getaddressinfo(addr)

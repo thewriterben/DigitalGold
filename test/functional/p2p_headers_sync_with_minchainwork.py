@@ -73,7 +73,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             assert len(chaintips) == 1
             assert {
                 'height': 0,
-                'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+                'hash': '4b4793de48a4912e9a16051843e478915011754c9f57c6c8403860d4147ba50b',  # DigitalGold regtest genesis
                 'branchlen': 0,
                 'status': 'active',
             } in chaintips
@@ -85,7 +85,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         assert {
             'height': 0,
-            'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+            'hash': '4b4793de48a4912e9a16051843e478915011754c9f57c6c8403860d4147ba50b',  # DigitalGold regtest genesis
             'branchlen': 0,
             'status': 'active',
         } in self.nodes[2].getchaintips()
@@ -155,7 +155,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
     def run_test(self):
         self.test_chains_sync_when_long_enough()
 
-        self.test_large_reorgs_can_succeed()
+        # self.test_large_reorgs_can_succeed()  # DigitalGold limits reorganizations to 10 blocks
 
         self.test_peerinfo_includes_headers_presync_height()
 

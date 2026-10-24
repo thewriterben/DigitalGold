@@ -20,7 +20,7 @@ import tempfile
 import time
 
 from typing import List
-from .address import create_deterministic_address_bcrt1_p2tr_op_true
+from .address import ADDRESS_BCRT1_P2WSH_OP_TRUE
 from .authproxy import JSONRPCException
 from . import coverage
 from .p2p import NetworkThread
@@ -527,6 +527,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 start_perf=self.options.perf,
                 use_valgrind=self.options.valgrind,
                 descriptors=self.options.descriptors,
+                v2transport=self.options.v2transport,
             )
             self.nodes.append(test_node_i)
             if not test_node_i.version_is_at_least(170000):
@@ -808,6 +809,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     coverage_dir=None,
                     cwd=self.options.tmpdir,
                     descriptors=self.options.descriptors,
+                    v2transport=self.options.v2transport,
                 ))
             self.start_node(CACHE_NODE_ID)
             cache_node = self.nodes[CACHE_NODE_ID]
@@ -824,13 +826,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # block in the cache does not age too much (have an old tip age).
             # This is needed so that we are out of IBD when the test starts,
             # see the tip age check in IsInitialBlockDownload().
-            '''
-            # Blackcoin: disable Taproot address for now
-            # gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [create_deterministic_address_bcrt1_p2tr_op_true()[0]]
-            # assert_equal(len(gen_addresses), 4)
-            '''
-            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3]
-            assert_equal(len(gen_addresses), 3)
+            # DigitalGold: the MiniWallet's default address is the P2WSH OP_TRUE address
+            # (Taproot is not active on regtest)
+            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [ADDRESS_BCRT1_P2WSH_OP_TRUE]
+            assert_equal(len(gen_addresses), 4)
             for i in range(8):
                 self.generatetoaddress(
                     cache_node,
