@@ -114,7 +114,9 @@ BOOST_AUTO_TEST_CASE(findearliestatleast_test)
             vBlocksMain[i].nTimeMax = i;
         } else {
             // randomly choose something in the range [MTP, MTP*2]
-            int64_t medianTimePast = vBlocksMain[i].GetMedianTimePast();
+            // DigitalGold: GetMedianTimePast() is the block's own timestamp, so base the
+            // randomised time on the previous block.
+            int64_t medianTimePast = vBlocksMain[i - 1].GetMedianTimePast();
             int r{int(InsecureRandRange(medianTimePast))};
             vBlocksMain[i].nTime = uint32_t(r + medianTimePast);
             vBlocksMain[i].nTimeMax = std::max(vBlocksMain[i].nTime, vBlocksMain[i-1].nTimeMax);

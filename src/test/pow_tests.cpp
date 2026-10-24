@@ -24,10 +24,12 @@ BOOST_AUTO_TEST_CASE(get_next_work)
     pindexLast.nBits = 0x1d028699;
 
     // Here (and below): expected_nbits is calculated in
-    // CalculateNextWorkRequired(); redoing the calculation here would be just
+    // CalculateNextTargetRequired(); redoing the calculation here would be just
     // reimplementing the same code that is written in pow.cpp. Rather than
-    // copy that code, we just hardcode the expected result.
-    unsigned int expected_nbits = 0x1e029263;
+    // copy that code, we just hardcode the expected result. The values are for
+    // DigitalGold's main-net parameters (64 s spacing, 16 min timespan,
+    // powLimit 00000fff...), with the actual spacing capped at 10 * nTargetSpacing.
+    unsigned int expected_nbits = 0x1d055e05;
     // Blackcoin
     BOOST_CHECK_EQUAL(CalculateNextTargetRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus(), false), expected_nbits);
     // BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
@@ -41,8 +43,8 @@ BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
     CBlockIndex pindexLast;
     pindexLast.nHeight = 2015;
     pindexLast.nTime = 1393345424;  // Block #2015
-    pindexLast.nBits = 0x1c06a7a5;
-    unsigned int expected_nbits = 0x1d06559e;
+    pindexLast.nBits = 0x1e0fffff; // already at powLimit, so the result must be clamped to it
+    unsigned int expected_nbits = 0x1e0fffff;
     // Blackcoin
     BOOST_CHECK_EQUAL(CalculateNextTargetRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus(), false), expected_nbits);
     // BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
@@ -57,7 +59,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual)
     pindexLast.nHeight = 68543;
     pindexLast.nTime = 1397374088;  // Block #68543
     pindexLast.nBits = 0x1d055260;
-    unsigned int expected_nbits = 0x1e0428e3;
+    unsigned int expected_nbits = 0x1d0b4f0c;
     // Blackcoin
     BOOST_CHECK_EQUAL(CalculateNextTargetRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus(), false), expected_nbits);
     /*
@@ -77,7 +79,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
     pindexLast.nHeight = 46367;
     pindexLast.nTime = 1396132439;  // Block #46367
     pindexLast.nBits = 0x1d045f46;
-    unsigned int expected_nbits = 0x1e0fffff;
+    unsigned int expected_nbits = 0x1d094a74;
     // Blackcoin
     BOOST_CHECK_EQUAL(CalculateNextTargetRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus(), false), expected_nbits);
     /*

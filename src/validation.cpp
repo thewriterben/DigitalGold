@@ -5032,14 +5032,22 @@ void ChainstateManager::CheckBlockIndex()
         if (!pindex->HaveNumChainTxs()) assert(pindex->nSequenceId <= 0); // nSequenceId can't be set positive for blocks that aren't linked (negative is used for preciousblock)
         // VALID_TRANSACTIONS is equivalent to nTx > 0 for all nodes (whether or not pruning has occurred).
         // HAVE_DATA is only equivalent to nTx > 0 (or VALID_TRANSACTIONS) if no pruning has occurred.
-        // As we've never pruned, then HAVE_DATA should be equivalent to nTx > 0
-        assert(!(pindex->nStatus & BLOCK_HAVE_DATA) == (pindex->nTx == 0));
-        if (pindexFirstAssumeValid == nullptr) {
-            // If we've got some assume valid blocks, then we might have
-            // missing blocks (not HAVE_DATA) but still treat them as
-            // having been processed (with a fake nTx value). Otherwise, we
-            // can assert that these are the same.
-            assert(pindexFirstMissing == pindexFirstNeverProcessed);
+        // Unless these indexes are assumed valid and pending block download on a
+        // background chainstate. (DigitalGold has no block pruning, so only the
+        // assumed-valid case is exempt; upstream also exempts pruned nodes.)
+        if (!pindex->IsAssumedValid()) {
+            // If we've never pruned, then HAVE_DATA should be equivalent to nTx > 0
+            assert(!(pindex->nStatus & BLOCK_HAVE_DATA) == (pindex->nTx == 0));
+            if (pindexFirstAssumeValid == nullptr) {
+                // If we've got some assume valid blocks, then we might have
+                // missing blocks (not HAVE_DATA) but still treat them as
+                // having been processed (with a fake nTx value). Otherwise, we
+                // can assert that these are the same.
+                assert(pindexFirstMissing == pindexFirstNeverProcessed);
+            }
+        } else {
+            // For assumed-valid blocks we can only say that HAVE_DATA implies nTx > 0
+            if (pindex->nStatus & BLOCK_HAVE_DATA) assert(pindex->nTx > 0);
         }
         if (pindex->nStatus & BLOCK_HAVE_UNDO) assert(pindex->nStatus & BLOCK_HAVE_DATA);
         if (pindex->IsAssumedValid()) {

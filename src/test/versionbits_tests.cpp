@@ -327,11 +327,16 @@ static void check_computeblockversion(VersionBitsCache& versionbitscache, const 
         }
         // Now mine 5 more blocks at the start time -- MTP should not have passed yet, so
         // CBV should still not yet set the bit.
-        nTime = nStartTime;
+        // DigitalGold: GetMedianTimePast() is the block's own timestamp, so the period that
+        // begins at block 2 * window stays DEFINED only while block 2 * window - 1 is stamped
+        // before nStartTime. Keep the old time for the rest of this period (upstream mines
+        // these blocks at nStartTime to show that the 11-block median lags); CBV must not
+        // set the bit for any of them.
         for (uint32_t i = params.nMinerConfirmationWindow - 4; i <= params.nMinerConfirmationWindow; i++) {
             lastBlock = firstChain.Mine(params.nMinerConfirmationWindow + i, nTime, VERSIONBITS_LAST_OLD_BLOCK_VERSION).Tip();
             BOOST_CHECK_EQUAL(versionbitscache.ComputeBlockVersion(lastBlock, params) & (1 << bit), 0);
         }
+        nTime = nStartTime;
         // Next we will advance to the next period and transition to STARTED,
     }
 
